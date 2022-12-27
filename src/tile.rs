@@ -8,3 +8,7 @@ where
 
     fn sockets(&self) -> [AxisPair<<Self as Tile<D>>::Socket>; D];
 }
+
+pub trait Weighted {
+    fn weight(&self) -> u32;
+}
