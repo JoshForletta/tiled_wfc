@@ -6,6 +6,6 @@ pub mod wfc;
 
 pub use axis_pair::AxisPair;
 pub use collapser::Collapser;
-pub use state::State;
+pub use state::{State, StateError};
 pub use tile::{Tile, Weighted};
 pub use wfc::WFC;
