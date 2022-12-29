@@ -50,6 +50,11 @@ impl State {
     }
 
     #[inline(always)]
+    pub fn state_indexes(&'_ self) -> impl Iterator<Item = usize> + '_ {
+        self.bitmask.iter_ones()
+    }
+
+    #[inline(always)]
     pub fn contains(&self, other: &Self) -> bool {
         other.bitmask.clone() & &self.bitmask == other.bitmask
     }
@@ -181,6 +186,20 @@ mod tests {
         assert_eq!(state.bitmask[1], false);
         assert_eq!(state.bitmask[2], true);
         assert_eq!(state.bitmask[3], false);
+    }
+
+    #[test]
+    fn state_indexes() {
+        let state = State {
+            bitmask: BitVec::from_iter([true, true, false, true]),
+        };
+
+        let mut iter = state.state_indexes();
+
+        assert_eq!(iter.next(), Some(0));
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), Some(3));
+        assert_eq!(iter.next(), None);
     }
 
     #[test]
