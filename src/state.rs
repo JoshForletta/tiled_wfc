@@ -29,7 +29,7 @@ impl Display for StateError {
 
 impl Error for StateError {}
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct State {
     bitmask: BitVec,
 }
@@ -68,12 +68,22 @@ impl State {
         changed
     }
 
-    pub fn collapse<C, R>(&self, collapser: &C, rng: &mut R) -> Result<(), ()>
+    pub fn collapse<C, R>(&mut self, collapser: &C, rng: &mut R) -> Result<State, StateError>
     where
         C: Collapser,
         R: Rng,
     {
-        todo!()
+        let index = collapser.collapse(self.bitmask.iter_ones(), rng)?;
+
+        let mut state = self.clone();
+        let mut bitmask = BitVec::repeat(false, self.bitmask.len());
+
+        state.set(index, false);
+        bitmask.set(index, true);
+
+        self.bitmask = bitmask;
+
+        Ok(state)
     }
 }
 
@@ -147,6 +157,10 @@ impl BitOrAssign<&State> for State {
 
 #[cfg(test)]
 mod tests {
+    use rand::rngs::mock::StepRng;
+
+    use crate::UnweightedCollapser;
+
     use super::*;
 
     #[test]
@@ -229,6 +243,26 @@ mod tests {
 
         assert_eq!(state, output);
         assert!(!changed);
+    }
+
+    #[test]
+    fn collapse() {
+        let mut state = State {
+            bitmask: BitVec::from_iter([true, true, false, true]),
+        };
+
+        let collapser = UnweightedCollapser;
+
+        let mut rng = StepRng::new(0, 0);
+
+        state.collapse(&collapser, &mut rng).unwrap();
+
+        assert_eq!(
+            state,
+            State {
+                bitmask: BitVec::from_iter([true, false, false, false])
+            }
+        );
     }
 
     #[test]

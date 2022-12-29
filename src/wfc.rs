@@ -1,7 +1,9 @@
+use std::error::Error;
+
 use nd_matrix::Matrix;
 use rand::rngs::StdRng;
 
-use crate::{AxisPair, Collapser, State, Tile};
+use crate::{AxisPair, Collapser, State, StateError, Tile};
 
 pub struct WFC<'a, T, C, const D: usize> {
     tile_set: &'a [T],
@@ -16,7 +18,7 @@ where
     T: Tile<D>,
     C: Collapser,
 {
-    pub fn collapse(&mut self) -> Result<(), ()> {
+    pub fn collapse(&mut self) -> Result<(), Box<dyn Error>> {
         while let Some(index) = self.least_entropic_index() {
             self.matrix
                 .get_mut(index)
