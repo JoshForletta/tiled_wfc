@@ -59,6 +59,15 @@ impl State {
         self.bitmask.set(index, value);
     }
 
+    #[inline(always)]
+    pub fn constrain(&mut self, other: &Self) -> bool {
+        let changed = !other.contains(self);
+
+        self.bitmask &= &other.bitmask;
+
+        changed
+    }
+
     pub fn collapse<C, R>(&self, collapser: &C, rng: &mut R) -> Result<(), ()>
     where
         C: Collapser,
@@ -180,6 +189,46 @@ mod tests {
         state.set(2, true);
 
         assert_eq!(state.bitmask[2], true);
+    }
+
+    #[test]
+    fn constrain() {
+        let mut state = State {
+            bitmask: BitVec::from_iter([true, true, true, false]),
+        };
+
+        let other = State {
+            bitmask: BitVec::from_iter([true, true, false, true]),
+        };
+
+        let output = State {
+            bitmask: BitVec::from_iter([true, true, false, false]),
+        };
+
+        let changed = state.constrain(&other);
+
+        assert_eq!(state, output);
+        assert!(changed);
+    }
+
+    #[test]
+    fn constrain_unchanged() {
+        let mut state = State {
+            bitmask: BitVec::from_iter([true, true, true, false]),
+        };
+
+        let other = State {
+            bitmask: BitVec::from_iter([true, true, true, false]),
+        };
+
+        let output = State {
+            bitmask: BitVec::from_iter([true, true, true, false]),
+        };
+
+        let changed = state.constrain(&other);
+
+        assert_eq!(state, output);
+        assert!(!changed);
     }
 
     #[test]
