@@ -1,4 +1,8 @@
-use std::{error::Error, fmt::Display};
+use std::{
+    error::Error,
+    fmt::Display,
+    ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign},
+};
 
 use bitvec::vec::BitVec;
 use rand::Rng;
@@ -25,6 +29,7 @@ impl Display for StateError {
 
 impl Error for StateError {}
 
+#[derive(Debug, PartialEq)]
 pub struct State {
     bitmask: BitVec,
 }
@@ -44,12 +49,90 @@ impl State {
         Self { bitmask }
     }
 
+    #[inline(always)]
+    pub fn contains(&self, other: &Self) -> bool {
+        other.bitmask.clone() & &self.bitmask == other.bitmask
+    }
+
+    #[inline(always)]
+    pub fn set(&mut self, index: usize, value: bool) {
+        self.bitmask.set(index, value);
+    }
+
     pub fn collapse<C, R>(&self, collapser: &C, rng: &mut R) -> Result<(), ()>
     where
         C: Collapser,
         R: Rng,
     {
         todo!()
+    }
+}
+
+impl BitAnd<State> for State {
+    type Output = State;
+
+    #[inline(always)]
+    fn bitand(mut self, rhs: State) -> Self::Output {
+        self.bitmask &= rhs.bitmask;
+        self
+    }
+}
+
+impl BitAnd<&State> for State {
+    type Output = State;
+
+    #[inline(always)]
+    fn bitand(mut self, rhs: &State) -> Self::Output {
+        self.bitmask &= &rhs.bitmask;
+        self
+    }
+}
+
+impl BitAndAssign<State> for State {
+    #[inline(always)]
+    fn bitand_assign(&mut self, rhs: State) {
+        self.bitmask &= rhs.bitmask;
+    }
+}
+
+impl BitAndAssign<&State> for State {
+    #[inline(always)]
+    fn bitand_assign(&mut self, rhs: &State) {
+        self.bitmask &= &rhs.bitmask;
+    }
+}
+
+impl BitOr<State> for State {
+    type Output = State;
+
+    #[inline(always)]
+    fn bitor(mut self, rhs: State) -> Self::Output {
+        self.bitmask |= rhs.bitmask;
+        self
+    }
+}
+
+impl BitOr<&State> for State {
+    type Output = State;
+
+    #[inline(always)]
+    fn bitor(mut self, rhs: &State) -> Self::Output {
+        self.bitmask |= &rhs.bitmask;
+        self
+    }
+}
+
+impl BitOrAssign<State> for State {
+    #[inline(always)]
+    fn bitor_assign(&mut self, rhs: State) {
+        self.bitmask |= rhs.bitmask;
+    }
+}
+
+impl BitOrAssign<&State> for State {
+    #[inline(always)]
+    fn bitor_assign(&mut self, rhs: &State) {
+        self.bitmask |= &rhs.bitmask;
     }
 }
 
@@ -75,5 +158,171 @@ mod tests {
         assert_eq!(state.bitmask[1], false);
         assert_eq!(state.bitmask[2], true);
         assert_eq!(state.bitmask[3], false);
+    }
+
+    #[test]
+    fn contains() {
+        let state = State {
+            bitmask: BitVec::from_iter([true, true, false, true]),
+        };
+
+        assert!(state.contains(&State {
+            bitmask: BitVec::from_iter([true, true, false, false])
+        }))
+    }
+
+    #[test]
+    fn set() {
+        let mut state = State {
+            bitmask: BitVec::repeat(false, 4),
+        };
+
+        state.set(2, true);
+
+        assert_eq!(state.bitmask[2], true);
+    }
+
+    #[test]
+    fn bitand() {
+        let state = State {
+            bitmask: BitVec::from_iter([false, true, false, true]),
+        };
+
+        let rhs = State {
+            bitmask: BitVec::from_iter([true, true, false, false]),
+        };
+
+        let output = State {
+            bitmask: BitVec::from_iter([false, true, false, false]),
+        };
+
+        assert_eq!(state & rhs, output);
+    }
+
+    #[test]
+    fn bitand_ref() {
+        let state = State {
+            bitmask: BitVec::from_iter([false, true, false, true]),
+        };
+
+        let rhs = State {
+            bitmask: BitVec::from_iter([true, true, false, false]),
+        };
+
+        let output = State {
+            bitmask: BitVec::from_iter([false, true, false, false]),
+        };
+
+        assert_eq!(state & &rhs, output);
+    }
+
+    #[test]
+    fn bitand_assign() {
+        let mut state = State {
+            bitmask: BitVec::from_iter([false, true, false, true]),
+        };
+
+        let rhs = State {
+            bitmask: BitVec::from_iter([true, true, false, false]),
+        };
+
+        let output = State {
+            bitmask: BitVec::from_iter([false, true, false, false]),
+        };
+
+        state &= rhs;
+
+        assert_eq!(state, output);
+    }
+
+    #[test]
+    fn bitand_assign_ref() {
+        let mut state = State {
+            bitmask: BitVec::from_iter([false, true, false, true]),
+        };
+
+        let rhs = State {
+            bitmask: BitVec::from_iter([true, true, false, false]),
+        };
+
+        let output = State {
+            bitmask: BitVec::from_iter([false, true, false, false]),
+        };
+
+        state &= &rhs;
+
+        assert_eq!(state, output);
+    }
+
+    #[test]
+    fn bitor() {
+        let state = State {
+            bitmask: BitVec::from_iter([false, true, false, true]),
+        };
+
+        let rhs = State {
+            bitmask: BitVec::from_iter([true, true, false, false]),
+        };
+
+        let output = State {
+            bitmask: BitVec::from_iter([true, true, false, true]),
+        };
+
+        assert_eq!(state | rhs, output);
+    }
+
+    #[test]
+    fn bitor_ref() {
+        let state = State {
+            bitmask: BitVec::from_iter([false, true, false, true]),
+        };
+
+        let rhs = State {
+            bitmask: BitVec::from_iter([true, true, false, false]),
+        };
+
+        let output = State {
+            bitmask: BitVec::from_iter([true, true, false, true]),
+        };
+
+        assert_eq!(state | &rhs, output);
+    }
+
+    #[test]
+    fn bitor_assign() {
+        let mut state = State {
+            bitmask: BitVec::from_iter([false, true, false, true]),
+        };
+
+        let rhs = State {
+            bitmask: BitVec::from_iter([true, true, false, false]),
+        };
+
+        let output = State {
+            bitmask: BitVec::from_iter([true, true, false, true]),
+        };
+
+        state |= rhs;
+
+        assert_eq!(state, output);
+    }
+
+    #[test]
+    fn bitor_assign_ref() {
+        let mut state = State {
+            bitmask: BitVec::from_iter([false, true, false, true]),
+        };
+
+        let rhs = State {
+            bitmask: BitVec::from_iter([true, true, false, false]),
+        };
+
+        let output = State {
+            bitmask: BitVec::from_iter([true, true, false, true]),
+        };
+
+        state |= &rhs;
+
+        assert_eq!(state, output);
     }
 }
