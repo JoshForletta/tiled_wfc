@@ -1,9 +1,11 @@
-use std::{array::from_fn, error::Error, marker::PhantomData};
+use std::{array::from_fn, error::Error, iter::once, marker::PhantomData};
 
 use nd_matrix::Matrix;
 use rand::{rngs::StdRng, SeedableRng};
 
-use crate::{AxisPair, Collapser, State, Tile, UnweightedCollapser, Weighted, WeightedCollapser};
+use crate::{
+    AxisPair, Collapser, State, StateError, Tile, UnweightedCollapser, Weighted, WeightedCollapser,
+};
 
 pub fn valid_adjacencies<T, const D: usize>(tile: &T, tile_set: &[T]) -> [AxisPair<State>; D]
 where
@@ -140,13 +142,60 @@ where
         }
     }
 
+    pub fn get_adjacent_indexes(&self, index: usize) -> [AxisPair<Option<usize>>; D] {
+        let mut adjacencies: [AxisPair<Option<usize>>; D] = [Default::default(); D];
+        let coordinate_offsets: Vec<_> = once(&1)
+            .chain(self.matrix.dimension_offsets().into_iter())
+            .collect();
+
+        for dimension in 0..D {
+            let corrdinate_offset = *coordinate_offsets[dimension];
+
+            let dimension_offset = self.matrix.dimension_offsets()[dimension];
+            let higher_dimension_index = index / dimension_offset;
+            let lower_bound = higher_dimension_index * dimension_offset;
+            let upper_bound = (higher_dimension_index + 1) * dimension_offset;
+
+            adjacencies[dimension].pos = index
+                .checked_add(corrdinate_offset)
+                .filter(|index| index < &upper_bound);
+
+            adjacencies[dimension].neg = index
+                .checked_sub(corrdinate_offset)
+                .filter(|index| index >= &lower_bound);
+        }
+
+        adjacencies
+    }
+
+    pub fn get_valid_adjacencies(&self, state: &State) -> Result<[AxisPair<State>; D], StateError> {
+        let empty_state = State::fill(false, self.tile_set.len());
+        let empty_pair = AxisPair::new(empty_state.clone(), empty_state.clone());
+        let mut cumulative_valid_adjacencies: [AxisPair<State>; D] =
+            from_fn(|_| empty_pair.clone());
+
+        for state_index in state.state_indexes() {
+            let valid_adjacencies = self
+                .valid_adjacencies_map
+                .get(state_index)
+                .ok_or(StateError::StateIndexOutOfBounds)?;
+
+            for dimension in 0..D {
+                cumulative_valid_adjacencies[dimension].pos |= &valid_adjacencies[dimension].pos;
+                cumulative_valid_adjacencies[dimension].neg |= &valid_adjacencies[dimension].neg;
+            }
+        }
+
+        Ok(cumulative_valid_adjacencies)
+    }
+
     pub fn collapse(&mut self) -> Result<(), Box<dyn Error>> {
         while let Some(index) = self.least_entropic_index() {
             self.matrix
                 .get_mut(index)
                 .expect("`self.least_entropic_index()` should return a valid index")
                 .collapse(&self.collapser, &mut self.rng)?;
-            self.propagate(index);
+            self.propagate(index)?;
         }
 
         Ok(())
@@ -163,8 +212,31 @@ where
             .map(|(index, _count)| index)
     }
 
-    pub fn propagate(&self, index: usize) {
-        todo!()
+    pub fn propagate(&mut self, index: usize) -> Result<(), StateError> {
+        let mut stack = Vec::from([index]);
+
+        while let Some(index) = stack.pop() {
+            let valid_adjacencies = self.get_valid_adjacencies(&self.matrix[index])?;
+            let adjacencies = self.get_adjacent_indexes(index);
+
+            for dimension in 0..D {
+                if let Some(positive_adjacency) = adjacencies[dimension].pos {
+                    if self.matrix[positive_adjacency].constrain(&valid_adjacencies[dimension].pos)
+                    {
+                        stack.push(positive_adjacency);
+                    }
+                }
+
+                if let Some(negitive_adjacency) = adjacencies[dimension].neg {
+                    if self.matrix[negitive_adjacency].constrain(&valid_adjacencies[dimension].neg)
+                    {
+                        stack.push(negitive_adjacency);
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -233,6 +305,70 @@ mod tests {
         ]);
 
         assert_eq!(valid_adjacencies_map(tile_set), output);
+    }
+
+    #[test]
+    fn get_adjacent_indexes() {
+        let wfc = WFC::<'_, TestTile, 2, _> {
+            tile_set: &[],
+            valid_adjacencies_map: Vec::new(),
+            collapser: UnweightedCollapser,
+            rng: StdRng::from_entropy(),
+            matrix: Matrix::fill([2, 2], State::fill(true, 3)),
+        };
+
+        let adjacencies = wfc.get_adjacent_indexes(2);
+
+        assert_eq!(
+            adjacencies,
+            [AxisPair::new(Some(3), None), AxisPair::new(None, Some(0)),]
+        );
+    }
+
+    #[test]
+    fn get_valid_adjacencies() {
+        let tile_set: &[TestTile] = &[
+            TestTile::new([AxisPair::new('a', 'b'), AxisPair::new('b', 'a')]),
+            TestTile::new([AxisPair::new('a', 'a'), AxisPair::new('a', 'a')]),
+            TestTile::new([AxisPair::new('b', 'b'), AxisPair::new('b', 'b')]),
+        ];
+
+        let valid_adjacencies_map = Vec::from([
+            [
+                AxisPair::new(State::with_index(1, 3), State::with_index(2, 3)),
+                AxisPair::new(State::with_index(2, 3), State::with_index(1, 3)),
+            ],
+            [
+                AxisPair::new(State::with_index(1, 3), State::with_indexes([0, 1], 3)),
+                AxisPair::new(State::with_indexes([0, 1], 3), State::with_index(1, 3)),
+            ],
+            [
+                AxisPair::new(State::with_indexes([0, 2], 3), State::with_index(2, 3)),
+                AxisPair::new(State::with_index(2, 3), State::with_indexes([0, 2], 3)),
+            ],
+        ]);
+
+        let wfc = WFC::<'_, TestTile, 2, _> {
+            tile_set,
+            valid_adjacencies_map,
+            collapser: UnweightedCollapser,
+            rng: StdRng::from_entropy(),
+            matrix: Matrix::fill([2, 2], State::fill(true, 3)),
+        };
+
+        let state = State::with_indexes([0, 1], 3);
+
+        assert_eq!(
+            wfc.get_valid_adjacencies(&State::fill(true, 4)),
+            Err(StateError::StateIndexOutOfBounds)
+        );
+        assert_eq!(
+            wfc.get_valid_adjacencies(&state).unwrap(),
+            [
+                AxisPair::new(State::with_index(1, 3), State::fill(true, 3)),
+                AxisPair::new(State::fill(true, 3), State::with_index(1, 3)),
+            ]
+        );
     }
 
     #[test]
