@@ -142,6 +142,31 @@ where
         }
     }
 
+    #[inline(always)]
+    pub fn matrix(&self) -> &Matrix<State, D> {
+        &self.matrix
+    }
+
+    #[inline(always)]
+    pub fn dimensions(&self) -> &[usize; D] {
+        self.matrix.dimensions()
+    }
+
+    #[inline(always)]
+    pub fn dimension_offsets(&self) -> &[usize; D] {
+        self.matrix.dimension_offsets()
+    }
+
+    #[inline(always)]
+    pub fn tile_set(&self) -> &[T] {
+        self.tile_set
+    }
+
+    #[inline(always)]
+    pub fn get_tile(&self, state: &State) -> Option<&T> {
+        self.tile_set.get(state.state_indexes().next()?)
+    }
+
     pub fn get_adjacent_indexes(&self, index: usize) -> [AxisPair<Option<usize>>; D] {
         let mut adjacencies: [AxisPair<Option<usize>>; D] = [Default::default(); D];
         let coordinate_offsets: Vec<_> = once(&1)
