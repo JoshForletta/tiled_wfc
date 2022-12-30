@@ -131,6 +131,15 @@ where
     T: Tile<D>,
     C: Collapser,
 {
+    pub fn builder() -> WFCBuilder<'a, T, D, C> {
+        WFCBuilder {
+            tile_set: None,
+            dimensions: None,
+            _collapser: PhantomData,
+            rng: None,
+        }
+    }
+
     pub fn collapse(&mut self) -> Result<(), Box<dyn Error>> {
         while let Some(index) = self.least_entropic_index() {
             self.matrix
