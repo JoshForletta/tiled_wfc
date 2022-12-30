@@ -144,7 +144,14 @@ where
     }
 
     pub fn least_entropic_index(&self) -> Option<usize> {
-        todo!()
+        self.matrix
+            .matrix()
+            .into_iter()
+            .map(|state| state.count())
+            .enumerate()
+            .filter_map(|(index, count)| (count > 1).then_some((index, count)))
+            .min_by(|(_min_index, min_count), (_index, count)| min_count.cmp(count))
+            .map(|(index, _count)| index)
     }
 
     pub fn propagate(&self, index: usize) {
@@ -217,5 +224,21 @@ mod tests {
         ]);
 
         assert_eq!(valid_adjacencies_map(tile_set), output);
+    }
+
+    #[test]
+    fn least_entropic_index() {
+        let mut wfc = WFC::<'_, TestTile, 2, _> {
+            tile_set: &[],
+            valid_adjacencies_map: Vec::new(),
+            collapser: UnweightedCollapser,
+            rng: StdRng::from_entropy(),
+            matrix: Matrix::fill([2, 2], State::fill(true, 3)),
+        };
+
+        wfc.matrix[0] = State::with_index(1, 3);
+        wfc.matrix[1].set(0, false);
+
+        assert_eq!(wfc.least_entropic_index(), Some(1));
     }
 }

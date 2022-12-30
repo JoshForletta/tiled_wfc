@@ -60,6 +60,11 @@ impl State {
     }
 
     #[inline(always)]
+    pub fn count(&self) -> usize {
+        self.bitmask.count_ones()
+    }
+
+    #[inline(always)]
     pub fn state_indexes(&'_ self) -> impl Iterator<Item = usize> + '_ {
         self.bitmask.iter_ones()
     }
