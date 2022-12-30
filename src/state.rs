@@ -29,7 +29,7 @@ impl Display for StateError {
 
 impl Error for StateError {}
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct State {
     bitmask: BitVec,
 }

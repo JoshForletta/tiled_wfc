@@ -1,4 +1,4 @@
-use std::{array::from_fn, error::Error, iter::once, marker::PhantomData};
+use std::{array::from_fn, collections::HashMap, error::Error, iter::once, marker::PhantomData};
 
 use nd_matrix::Matrix;
 use rand::{rngs::StdRng, SeedableRng};
@@ -93,6 +93,7 @@ where
         Ok(WFC {
             tile_set,
             valid_adjacencies_map: valid_adjacencies_map(tile_set),
+            valid_adjacencies_cache: HashMap::new(),
             collapser: UnweightedCollapser,
             rng: rng.unwrap_or(StdRng::from_entropy()),
             matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
@@ -113,6 +114,7 @@ where
         Ok(WFC {
             tile_set,
             valid_adjacencies_map: valid_adjacencies_map(tile_set),
+            valid_adjacencies_cache: HashMap::new(),
             collapser: WeightedCollapser::from(tile_set),
             rng: rng.unwrap_or(StdRng::from_entropy()),
             matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
@@ -123,6 +125,7 @@ where
 pub struct WFC<'a, T, const D: usize, C = UnweightedCollapser> {
     tile_set: &'a [T],
     valid_adjacencies_map: Vec<[AxisPair<State>; D]>,
+    valid_adjacencies_cache: HashMap<State, [AxisPair<State>; D]>,
     collapser: C,
     rng: StdRng,
     matrix: Matrix<State, D>,
@@ -241,7 +244,18 @@ where
         let mut stack = Vec::from([index]);
 
         while let Some(index) = stack.pop() {
-            let valid_adjacencies = self.get_valid_adjacencies(&self.matrix[index])?;
+            let state = &self.matrix[index];
+
+            let valid_adjacencies = match self.valid_adjacencies_cache.get(state) {
+                Some(valid_adjacencies) => valid_adjacencies,
+                None => {
+                    let valid_adjacencies = self.get_valid_adjacencies(state)?;
+                    self.valid_adjacencies_cache
+                        .insert(state.clone(), valid_adjacencies);
+                    &self.valid_adjacencies_cache[state]
+                }
+            };
+
             let adjacencies = self.get_adjacent_indexes(index);
 
             for dimension in 0..D {
@@ -337,6 +351,7 @@ mod tests {
         let wfc = WFC::<'_, TestTile, 2, _> {
             tile_set: &[],
             valid_adjacencies_map: Vec::new(),
+            valid_adjacencies_cache: HashMap::new(),
             collapser: UnweightedCollapser,
             rng: StdRng::from_entropy(),
             matrix: Matrix::fill([2, 2], State::fill(true, 3)),
@@ -376,6 +391,7 @@ mod tests {
         let wfc = WFC::<'_, TestTile, 2, _> {
             tile_set,
             valid_adjacencies_map,
+            valid_adjacencies_cache: HashMap::new(),
             collapser: UnweightedCollapser,
             rng: StdRng::from_entropy(),
             matrix: Matrix::fill([2, 2], State::fill(true, 3)),
@@ -401,6 +417,7 @@ mod tests {
         let mut wfc = WFC::<'_, TestTile, 2, _> {
             tile_set: &[],
             valid_adjacencies_map: Vec::new(),
+            valid_adjacencies_cache: HashMap::new(),
             collapser: UnweightedCollapser,
             rng: StdRng::from_entropy(),
             matrix: Matrix::fill([2, 2], State::fill(true, 3)),
