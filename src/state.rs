@@ -49,6 +49,16 @@ impl State {
         Self { bitmask }
     }
 
+    pub fn with_indexes<const N: usize>(indexes: [usize; N], len: usize) -> Self {
+        let mut bitmask = BitVec::repeat(false, len);
+
+        for index in indexes.into_iter() {
+            bitmask.set(index, true);
+        }
+
+        Self { bitmask }
+    }
+
     #[inline(always)]
     pub fn state_indexes(&'_ self) -> impl Iterator<Item = usize> + '_ {
         self.bitmask.iter_ones()
@@ -186,6 +196,16 @@ mod tests {
         assert_eq!(state.bitmask[1], false);
         assert_eq!(state.bitmask[2], true);
         assert_eq!(state.bitmask[3], false);
+    }
+
+    #[test]
+    fn with_indexes() {
+        let state = State::with_indexes([1, 3], 4);
+
+        assert_eq!(state.bitmask[0], false);
+        assert_eq!(state.bitmask[1], true);
+        assert_eq!(state.bitmask[2], false);
+        assert_eq!(state.bitmask[3], true);
     }
 
     #[test]
