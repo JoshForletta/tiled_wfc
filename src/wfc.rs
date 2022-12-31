@@ -198,7 +198,7 @@ where
 
     #[inline(always)]
     pub fn get_tile(&self, state: &State) -> Option<&T> {
-        self.tile_set.get(state.state_indexes().next()?)
+        self.tile_set.get(state.state_index()?)
     }
 
     pub fn get_adjacent_indexes(&self, index: usize) -> [AxisPair<Option<usize>>; D] {

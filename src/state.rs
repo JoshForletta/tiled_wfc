@@ -60,8 +60,18 @@ impl State {
     }
 
     #[inline(always)]
+    pub fn is_collapsed(&self) -> bool {
+        self.bitmask.count_ones() == 1
+    }
+
+    #[inline(always)]
     pub fn count(&self) -> usize {
         self.bitmask.count_ones()
+    }
+
+    #[inline(always)]
+    pub fn state_index(&self) -> Option<usize> {
+        self.is_collapsed().then_some(self.bitmask.first_one()?)
     }
 
     #[inline(always)]
@@ -211,6 +221,60 @@ mod tests {
         assert_eq!(state.bitmask[1], true);
         assert_eq!(state.bitmask[2], false);
         assert_eq!(state.bitmask[3], true);
+    }
+
+    #[test]
+    fn is_collapsed_collapsed() {
+        let state = State {
+            bitmask: BitVec::from_iter([false, true, false, false]),
+        };
+
+        assert!(state.is_collapsed());
+    }
+
+    #[test]
+    fn is_collapsed_no_state() {
+        let state = State {
+            bitmask: BitVec::from_iter([false, false, false, false]),
+        };
+
+        assert!(!state.is_collapsed());
+    }
+
+    #[test]
+    fn is_collapsed_superimposed() {
+        let state = State {
+            bitmask: BitVec::from_iter([true, true, false, true]),
+        };
+
+        assert!(!state.is_collapsed());
+    }
+
+    #[test]
+    fn state_index_collapsed() {
+        let state = State {
+            bitmask: BitVec::from_iter([false, true, false, false]),
+        };
+
+        assert_eq!(state.state_index(), Some(1));
+    }
+
+    #[test]
+    fn state_index_no_state() {
+        let state = State {
+            bitmask: BitVec::from_iter([false, false, false, false]),
+        };
+
+        assert_eq!(state.state_index(), None);
+    }
+
+    #[test]
+    fn state_index_superimposed() {
+        let state = State {
+            bitmask: BitVec::from_iter([true, true, false, true]),
+        };
+
+        assert_eq!(state.state_index(), None);
     }
 
     #[test]
