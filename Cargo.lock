@@ -45,9 +45,9 @@ checksum = "201de327520df007757c1f0adce6e827fe8562fbc28bfd9c15571c66ca1f5f79"
 
 [[package]]
 name = "nd_matrix"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb5d5721946c14af171b3095348ac4747494ded9af2a6032f53f1a2de4f3dc77"
+checksum = "4e53f34d8a258cbec53132ead17e9c22a44f6b0f10b40964933fbf55712f1081"
 
 [[package]]
 name = "ppv-lite86"

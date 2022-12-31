@@ -166,6 +166,15 @@ where
     }
 
     #[inline(always)]
+    pub fn collapser(&self) -> &C {
+        &self.collapser
+    }
+
+    pub fn rng(&self) -> &StdRng {
+        &self.rng
+    }
+
+    #[inline(always)]
     pub fn get_tile(&self, state: &State) -> Option<&T> {
         self.tile_set.get(state.state_indexes().next()?)
     }
