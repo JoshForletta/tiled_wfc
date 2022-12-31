@@ -1,6 +1,6 @@
 use std::{array::from_fn, collections::HashMap, error::Error, iter::once, marker::PhantomData};
 
-use nd_matrix::Matrix;
+use nd_matrix::{Matrix, ToIndex};
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
@@ -170,8 +170,30 @@ where
         &self.collapser
     }
 
+    #[inline(always)]
     pub fn rng(&self) -> &StdRng {
         &self.rng
+    }
+
+    #[inline(always)]
+    pub fn rng_mut(&mut self) -> &mut StdRng {
+        &mut self.rng
+    }
+
+    #[inline(always)]
+    pub fn get<I>(&self, index: I) -> Option<&State>
+    where
+        I: ToIndex<D>,
+    {
+        self.matrix.get(index)
+    }
+
+    #[inline(always)]
+    pub fn get_mut<I>(&mut self, index: I) -> Option<&mut State>
+    where
+        I: ToIndex<D>,
+    {
+        self.matrix.get_mut(index)
     }
 
     #[inline(always)]
