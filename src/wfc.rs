@@ -94,6 +94,7 @@ where
             tile_set,
             valid_adjacencies_map: valid_adjacencies_map(tile_set),
             valid_adjacencies_cache: HashMap::new(),
+            propagation_stack: Vec::new(),
             collapser: UnweightedCollapser,
             rng: rng.unwrap_or(StdRng::from_entropy()),
             matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
@@ -115,6 +116,7 @@ where
             tile_set,
             valid_adjacencies_map: valid_adjacencies_map(tile_set),
             valid_adjacencies_cache: HashMap::new(),
+            propagation_stack: Vec::new(),
             collapser: WeightedCollapser::from(tile_set),
             rng: rng.unwrap_or(StdRng::from_entropy()),
             matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
@@ -126,6 +128,7 @@ pub struct WFC<'a, T, const D: usize, C = UnweightedCollapser> {
     tile_set: &'a [T],
     valid_adjacencies_map: Vec<[AxisPair<State>; D]>,
     valid_adjacencies_cache: HashMap<State, [AxisPair<State>; D]>,
+    propagation_stack: Vec<usize>,
     collapser: C,
     rng: StdRng,
     matrix: Matrix<State, D>,
@@ -261,7 +264,9 @@ where
         while let Some(index) = self.least_entropic_index() {
             let remaining_state = self.collapse_state(index);
 
-            if let Ok(propagation_records) = self.propagate(index) {
+            self.propagation_stack.push(index);
+
+            if let Ok(propagation_records) = self.propagate() {
                 stack.push((index, remaining_state, propagation_records));
             } else {
                 let (index, remaining_state, propagation_records) = stack.pop().ok_or(())?;
@@ -286,11 +291,10 @@ where
             .map(|(index, _count)| index)
     }
 
-    pub fn propagate(&mut self, index: usize) -> Result<Vec<(usize, State)>, ()> {
+    pub fn propagate(&mut self) -> Result<Vec<(usize, State)>, ()> {
         let mut propagation_records = Vec::new();
-        let mut stack = Vec::from([index]);
 
-        while let Some(index) = stack.pop() {
+        while let Some(index) = self.propagation_stack.pop() {
             let state = &self.matrix[index];
 
             // TODO: use HashMap::entry
@@ -323,7 +327,7 @@ where
                             return Err(());
                         }
 
-                        stack.push(positive_adjacency_index);
+                        self.propagation_stack.push(positive_adjacency_index);
                     }
                 }
 
@@ -341,7 +345,7 @@ where
                             return Err(());
                         }
 
-                        stack.push(negitive_adjacency_index);
+                        self.propagation_stack.push(negitive_adjacency_index);
                     }
                 }
             }
