@@ -95,6 +95,7 @@ where
             valid_adjacencies_map: valid_adjacencies_map(tile_set),
             valid_adjacencies_cache: HashMap::new(),
             propagation_stack: Vec::new(),
+            propagation_records: Vec::new(),
             collapser: UnweightedCollapser,
             rng: rng.unwrap_or(StdRng::from_entropy()),
             matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
@@ -117,6 +118,7 @@ where
             valid_adjacencies_map: valid_adjacencies_map(tile_set),
             valid_adjacencies_cache: HashMap::new(),
             propagation_stack: Vec::new(),
+            propagation_records: Vec::new(),
             collapser: WeightedCollapser::from(tile_set),
             rng: rng.unwrap_or(StdRng::from_entropy()),
             matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
@@ -129,6 +131,7 @@ pub struct WFC<'a, T, const D: usize, C = UnweightedCollapser> {
     valid_adjacencies_map: Vec<[AxisPair<State>; D]>,
     valid_adjacencies_cache: HashMap<State, [AxisPair<State>; D]>,
     propagation_stack: Vec<usize>,
+    propagation_records: Vec<(usize, State)>,
     collapser: C,
     rng: StdRng,
     matrix: Matrix<State, D>,
@@ -266,14 +269,14 @@ where
 
             self.propagation_stack.push(index);
 
-            if let Ok(propagation_records) = self.propagate() {
-                stack.push((index, remaining_state, propagation_records));
+            if let Ok(propagation_depth) = self.propagate() {
+                stack.push((index, remaining_state, propagation_depth));
             } else {
-                let (index, remaining_state, propagation_records) = stack.pop().ok_or(())?;
+                let (index, remaining_state, propagation_depth) = stack.pop().ok_or(())?;
 
                 self.matrix[index] = remaining_state;
 
-                self.unpropagate(propagation_records);
+                self.unpropagate(propagation_depth);
             };
         }
 
@@ -291,8 +294,8 @@ where
             .map(|(index, _count)| index)
     }
 
-    pub fn propagate(&mut self) -> Result<Vec<(usize, State)>, ()> {
-        let mut propagation_records = Vec::new();
+    pub fn propagate(&mut self) -> Result<usize, ()> {
+        let mut propagation_depth = 0;
 
         while let Some(index) = self.propagation_stack.pop() {
             let state = &self.matrix[index];
@@ -318,12 +321,14 @@ where
                     let valid_adjacency = &valid_adjacencies[dimension].pos;
 
                     if !valid_adjacency.contains(&adjacency) {
-                        propagation_records.push((positive_adjacency_index, adjacency.clone()));
+                        self.propagation_records
+                            .push((positive_adjacency_index, adjacency.clone()));
+                        propagation_depth += 1;
 
                         adjacency.constrain(valid_adjacency);
 
                         if adjacency.count() == 0 {
-                            self.unpropagate(propagation_records);
+                            self.unpropagate(propagation_depth);
                             return Err(());
                         }
 
@@ -336,12 +341,14 @@ where
                     let valid_adjacency = &valid_adjacencies[dimension].neg;
 
                     if !valid_adjacency.contains(&adjacency) {
-                        propagation_records.push((negitive_adjacency_index, adjacency.clone()));
+                        self.propagation_records
+                            .push((negitive_adjacency_index, adjacency.clone()));
+                        propagation_depth += 1;
 
                         adjacency.constrain(valid_adjacency);
 
                         if adjacency.count() == 0 {
-                            self.unpropagate(propagation_records);
+                            self.unpropagate(propagation_depth);
                             return Err(());
                         }
 
@@ -351,11 +358,16 @@ where
             }
         }
 
-        Ok(propagation_records)
+        Ok(propagation_depth)
     }
 
-    pub fn unpropagate(&mut self, propagation_records: Vec<(usize, State)>) {
-        for (index, state) in propagation_records.into_iter() {
+    pub fn unpropagate(&mut self, propagation_depth: usize) {
+        for _ in 0..propagation_depth {
+            let (index, state) = self
+                .propagation_records
+                .pop()
+                .expect("`propagation_depth` <= `self.propagation_records.len()`");
+
             self.matrix[index] = state;
         }
     }
