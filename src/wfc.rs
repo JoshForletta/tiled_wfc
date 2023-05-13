@@ -1,4 +1,4 @@
-use std::{array::from_fn, collections::HashMap, iter::once, marker::PhantomData};
+use std::{array::from_fn, collections::HashMap, marker::PhantomData};
 
 use nd_matrix::{Matrix, ToIndex};
 use rand::{rngs::StdRng, SeedableRng};
@@ -207,32 +207,6 @@ where
         self.tile_set.get(state.state_index()?)
     }
 
-    pub fn get_adjacent_indexes(&self, index: usize) -> [AxisPair<Option<usize>>; D] {
-        let mut adjacencies: [AxisPair<Option<usize>>; D] = [Default::default(); D];
-        let coordinate_offsets: Vec<_> = once(&1)
-            .chain(self.matrix.dimension_offsets().into_iter())
-            .collect();
-
-        for dimension in 0..D {
-            let corrdinate_offset = *coordinate_offsets[dimension];
-
-            let dimension_offset = self.matrix.dimension_offsets()[dimension];
-            let higher_dimension_index = index / dimension_offset;
-            let lower_bound = higher_dimension_index * dimension_offset;
-            let upper_bound = (higher_dimension_index + 1) * dimension_offset;
-
-            adjacencies[dimension].pos = index
-                .checked_add(corrdinate_offset)
-                .filter(|index| index < &upper_bound);
-
-            adjacencies[dimension].neg = index
-                .checked_sub(corrdinate_offset)
-                .filter(|index| index >= &lower_bound);
-        }
-
-        adjacencies
-    }
-
     pub fn get_valid_adjacencies(&self, state: &State) -> Result<[AxisPair<State>; D], StateError> {
         let empty_state = State::fill(false, self.tile_set.len());
         let empty_pair = AxisPair::new(empty_state.clone(), empty_state.clone());
@@ -312,7 +286,7 @@ where
                 }
             };
 
-            let adjacencies = self.get_adjacent_indexes(index);
+            let adjacencies = self.matrix.get_adjacent_indexes(index);
 
             for dimension in 0..D {
                 // TODO: impl IntoIter for AxisPair
@@ -438,27 +412,6 @@ mod tests {
         ]);
 
         assert_eq!(valid_adjacencies_map(tile_set), output);
-    }
-
-    #[test]
-    fn get_adjacent_indexes() {
-        let wfc = WFC::<'_, TestTile, 2, _> {
-            tile_set: &[],
-            valid_adjacencies_map: Vec::new(),
-            valid_adjacencies_cache: HashMap::new(),
-            propagation_stack: Vec::new(),
-            propagation_records: Vec::new(),
-            collapser: UnweightedCollapser,
-            rng: StdRng::from_entropy(),
-            matrix: Matrix::fill([2, 2], State::fill(true, 3)),
-        };
-
-        let adjacencies = wfc.get_adjacent_indexes(2);
-
-        assert_eq!(
-            adjacencies,
-            [AxisPair::new(Some(3), None), AxisPair::new(None, Some(0)),]
-        );
     }
 
     #[test]
