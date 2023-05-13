@@ -1,6 +1,6 @@
 use std::{array::from_fn, collections::HashMap, iter::once, marker::PhantomData};
 
-use nd_matrix::{Matrix, ToIndex, ToPoint};
+use nd_matrix::{Matrix, ToIndex};
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
