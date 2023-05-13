@@ -259,7 +259,6 @@ where
         let mut stack = Vec::new();
 
         while let Some(index) = self.least_entropic_index() {
-            index.to_point(self.matrix.dimension_offsets());
             let remaining_state = self.collapse_state(index);
 
             if let Ok(propagation_records) = self.propagate(index) {
