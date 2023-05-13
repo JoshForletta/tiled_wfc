@@ -104,8 +104,8 @@ mod tests {
         assert_eq!(collapser.collapse(states, &mut rng), 0);
 
         // Assertions pass but StepRng makes this test slow I don't know why.
-        // assert_eq!(collapser.collapse(states, &mut rng), Ok(1));
-        // assert_eq!(collapser.collapse(states, &mut rng), Ok(2));
+        // assert_eq!(collapser.collapse(states, &mut rng), 1);
+        // assert_eq!(collapser.collapse(states, &mut rng), 2);
     }
 
     #[test]

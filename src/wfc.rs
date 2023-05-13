@@ -1,6 +1,6 @@
-use std::{array::from_fn, collections::HashMap, error::Error, iter::once, marker::PhantomData};
+use std::{array::from_fn, collections::HashMap, iter::once, marker::PhantomData};
 
-use nd_matrix::{Matrix, ToIndex};
+use nd_matrix::{Matrix, ToIndex, ToPoint};
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
@@ -248,13 +248,29 @@ where
         Ok(cumulative_valid_adjacencies)
     }
 
-    pub fn collapse(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn collapse_state(&mut self, index: usize) -> State {
+        self.matrix
+            .get_mut(index)
+            .expect("`index` is a valid index")
+            .collapse(&self.collapser, &mut self.rng)
+    }
+
+    pub fn collapse(&mut self) -> Result<(), ()> {
+        let mut stack = Vec::new();
+
         while let Some(index) = self.least_entropic_index() {
-            self.matrix
-                .get_mut(index)
-                .expect("`self.least_entropic_index()` should return a valid index")
-                .collapse(&self.collapser, &mut self.rng);
-            self.propagate(index)?;
+            index.to_point(self.matrix.dimension_offsets());
+            let remaining_state = self.collapse_state(index);
+
+            if let Ok(propagation_records) = self.propagate(index) {
+                stack.push((index, remaining_state, propagation_records));
+            } else {
+                let (index, remaining_state, propagation_records) = stack.pop().ok_or(())?;
+
+                self.matrix[index] = remaining_state;
+
+                self.unpropagate(propagation_records);
+            };
         }
 
         Ok(())
@@ -271,16 +287,19 @@ where
             .map(|(index, _count)| index)
     }
 
-    pub fn propagate(&mut self, index: usize) -> Result<(), StateError> {
+    pub fn propagate(&mut self, index: usize) -> Result<Vec<(usize, State)>, ()> {
+        let mut propagation_records = Vec::new();
         let mut stack = Vec::from([index]);
 
         while let Some(index) = stack.pop() {
             let state = &self.matrix[index];
 
+            // TODO: use HashMap::entry
             let valid_adjacencies = match self.valid_adjacencies_cache.get(state) {
                 Some(valid_adjacencies) => valid_adjacencies,
                 None => {
-                    let valid_adjacencies = self.get_valid_adjacencies(state)?;
+                    let valid_adjacencies =
+                        self.get_valid_adjacencies(state).expect("`index` is valid");
                     self.valid_adjacencies_cache
                         .insert(state.clone(), valid_adjacencies);
                     &self.valid_adjacencies_cache[state]
@@ -290,23 +309,52 @@ where
             let adjacencies = self.get_adjacent_indexes(index);
 
             for dimension in 0..D {
-                if let Some(positive_adjacency) = adjacencies[dimension].pos {
-                    if self.matrix[positive_adjacency].constrain(&valid_adjacencies[dimension].pos)
-                    {
-                        stack.push(positive_adjacency);
+                // TODO: impl IntoIter for AxisPair
+                if let Some(positive_adjacency_index) = adjacencies[dimension].pos {
+                    let adjacency = &mut self.matrix[positive_adjacency_index];
+                    let valid_adjacency = &valid_adjacencies[dimension].pos;
+
+                    if !valid_adjacency.contains(&adjacency) {
+                        propagation_records.push((positive_adjacency_index, adjacency.clone()));
+
+                        adjacency.constrain(valid_adjacency);
+
+                        if adjacency.count() == 0 {
+                            self.unpropagate(propagation_records);
+                            return Err(());
+                        }
+
+                        stack.push(positive_adjacency_index);
                     }
                 }
 
-                if let Some(negitive_adjacency) = adjacencies[dimension].neg {
-                    if self.matrix[negitive_adjacency].constrain(&valid_adjacencies[dimension].neg)
-                    {
-                        stack.push(negitive_adjacency);
+                if let Some(negitive_adjacency_index) = adjacencies[dimension].neg {
+                    let adjacency = &mut self.matrix[negitive_adjacency_index];
+                    let valid_adjacency = &valid_adjacencies[dimension].neg;
+
+                    if !valid_adjacency.contains(&adjacency) {
+                        propagation_records.push((negitive_adjacency_index, adjacency.clone()));
+
+                        adjacency.constrain(valid_adjacency);
+
+                        if adjacency.count() == 0 {
+                            self.unpropagate(propagation_records);
+                            return Err(());
+                        }
+
+                        stack.push(negitive_adjacency_index);
                     }
                 }
             }
         }
 
-        Ok(())
+        Ok(propagation_records)
+    }
+
+    pub fn unpropagate(&mut self, propagation_records: Vec<(usize, State)>) {
+        for (index, state) in propagation_records.into_iter() {
+            self.matrix[index] = state;
+        }
     }
 }
 

@@ -98,22 +98,22 @@ impl State {
         changed
     }
 
-    pub fn collapse<C, R>(&mut self, collapser: &C, rng: &mut R)
+    pub fn collapse<C, R>(&mut self, collapser: &C, rng: &mut R) -> Self
     where
         C: Collapser,
         R: Rng,
     {
         let index = collapser.collapse(self.bitmask.iter_ones(), rng);
 
-        // let mut state = self.clone();
+        let mut remaining_state = self.clone();
         let mut bitmask = BitVec::repeat(false, self.bitmask.len());
 
-        // state.set(index, false);
+        remaining_state.set(index, false);
         bitmask.set(index, true);
 
         self.bitmask = bitmask;
 
-        // state
+        remaining_state
     }
 }
 
