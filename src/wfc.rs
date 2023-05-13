@@ -253,7 +253,7 @@ where
             self.matrix
                 .get_mut(index)
                 .expect("`self.least_entropic_index()` should return a valid index")
-                .collapse(&self.collapser, &mut self.rng)?;
+                .collapse(&self.collapser, &mut self.rng);
             self.propagate(index)?;
         }
 
