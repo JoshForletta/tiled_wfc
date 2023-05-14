@@ -31,12 +31,25 @@ impl Error for StateError {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct State {
+    collapsed: bool,
     bitmask: BitVec,
 }
 
 impl State {
+    pub fn new_collapsed(index: usize, len: usize) -> Self {
+        let mut bitmask = BitVec::repeat(false, len);
+
+        bitmask.set(index, true);
+
+        Self {
+            collapsed: true,
+            bitmask,
+        }
+    }
+
     pub fn fill(bit: bool, len: usize) -> Self {
         Self {
+            collapsed: false,
             bitmask: BitVec::repeat(bit, len),
         }
     }
@@ -46,7 +59,10 @@ impl State {
 
         bitmask.set(index, true);
 
-        Self { bitmask }
+        Self {
+            collapsed: false,
+            bitmask,
+        }
     }
 
     pub fn with_indexes<const N: usize>(indexes: [usize; N], len: usize) -> Self {
@@ -56,12 +72,15 @@ impl State {
             bitmask.set(index, true);
         }
 
-        Self { bitmask }
+        Self {
+            collapsed: false,
+            bitmask,
+        }
     }
 
     #[inline(always)]
     pub fn is_collapsed(&self) -> bool {
-        self.bitmask.count_ones() == 1
+        self.collapsed
     }
 
     #[inline(always)]
@@ -86,11 +105,13 @@ impl State {
 
     #[inline(always)]
     pub fn set(&mut self, index: usize, value: bool) {
+        assert!(!self.collapsed, "NOT COLLAPSED");
         self.bitmask.set(index, value);
     }
 
     #[inline(always)]
     pub fn constrain(&mut self, other: &Self) -> bool {
+        assert!(!self.collapsed, "NOT COLLAPSED");
         let changed = !other.contains(self);
 
         self.bitmask &= &other.bitmask;
@@ -108,6 +129,8 @@ impl State {
         self.bitmask.set_elements(0);
         self.set(index, true);
 
+        self.collapsed = true;
+
         Ok(index)
     }
 }
@@ -117,6 +140,7 @@ impl BitAnd<State> for State {
 
     #[inline(always)]
     fn bitand(mut self, rhs: State) -> Self::Output {
+        assert!(!self.collapsed, "NOT COLLAPSED");
         self.bitmask &= rhs.bitmask;
         self
     }
@@ -127,6 +151,7 @@ impl BitAnd<&State> for State {
 
     #[inline(always)]
     fn bitand(mut self, rhs: &State) -> Self::Output {
+        assert!(!self.collapsed, "NOT COLLAPSED");
         self.bitmask &= &rhs.bitmask;
         self
     }
@@ -135,6 +160,7 @@ impl BitAnd<&State> for State {
 impl BitAndAssign<State> for State {
     #[inline(always)]
     fn bitand_assign(&mut self, rhs: State) {
+        assert!(!self.collapsed, "NOT COLLAPSED");
         self.bitmask &= rhs.bitmask;
     }
 }
@@ -142,6 +168,7 @@ impl BitAndAssign<State> for State {
 impl BitAndAssign<&State> for State {
     #[inline(always)]
     fn bitand_assign(&mut self, rhs: &State) {
+        assert!(!self.collapsed, "NOT COLLAPSED");
         self.bitmask &= &rhs.bitmask;
     }
 }
@@ -151,6 +178,7 @@ impl BitOr<State> for State {
 
     #[inline(always)]
     fn bitor(mut self, rhs: State) -> Self::Output {
+        assert!(!self.collapsed, "NOT COLLAPSED");
         self.bitmask |= rhs.bitmask;
         self
     }
@@ -161,6 +189,7 @@ impl BitOr<&State> for State {
 
     #[inline(always)]
     fn bitor(mut self, rhs: &State) -> Self::Output {
+        assert!(!self.collapsed, "NOT COLLAPSED");
         self.bitmask |= &rhs.bitmask;
         self
     }
@@ -169,6 +198,7 @@ impl BitOr<&State> for State {
 impl BitOrAssign<State> for State {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: State) {
+        assert!(!self.collapsed, "NOT COLLAPSED");
         self.bitmask |= rhs.bitmask;
     }
 }
@@ -176,6 +206,7 @@ impl BitOrAssign<State> for State {
 impl BitOrAssign<&State> for State {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: &State) {
+        assert!(!self.collapsed, "NOT COLLAPSED");
         self.bitmask |= &rhs.bitmask;
     }
 }
@@ -221,6 +252,7 @@ mod tests {
     #[test]
     fn is_collapsed_collapsed() {
         let state = State {
+            collapsed: true,
             bitmask: BitVec::from_iter([false, true, false, false]),
         };
 
@@ -230,6 +262,7 @@ mod tests {
     #[test]
     fn is_collapsed_no_state() {
         let state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, false, false, false]),
         };
 
@@ -239,6 +272,7 @@ mod tests {
     #[test]
     fn is_collapsed_superimposed() {
         let state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, true]),
         };
 
@@ -248,6 +282,7 @@ mod tests {
     #[test]
     fn state_index_collapsed() {
         let state = State {
+            collapsed: true,
             bitmask: BitVec::from_iter([false, true, false, false]),
         };
 
@@ -257,6 +292,7 @@ mod tests {
     #[test]
     fn state_index_no_state() {
         let state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, false, false, false]),
         };
 
@@ -266,6 +302,7 @@ mod tests {
     #[test]
     fn state_index_superimposed() {
         let state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, true]),
         };
 
@@ -275,6 +312,7 @@ mod tests {
     #[test]
     fn state_indexes() {
         let state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, true]),
         };
 
@@ -289,10 +327,12 @@ mod tests {
     #[test]
     fn contains() {
         let state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, true]),
         };
 
         assert!(state.contains(&State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, false])
         }))
     }
@@ -300,6 +340,7 @@ mod tests {
     #[test]
     fn set() {
         let mut state = State {
+            collapsed: false,
             bitmask: BitVec::repeat(false, 4),
         };
 
@@ -311,14 +352,17 @@ mod tests {
     #[test]
     fn constrain() {
         let mut state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, true, false]),
         };
 
         let other = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, true]),
         };
 
         let output = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, false]),
         };
 
@@ -331,14 +375,17 @@ mod tests {
     #[test]
     fn constrain_unchanged() {
         let mut state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, true, false]),
         };
 
         let other = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, true, false]),
         };
 
         let output = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, true, false]),
         };
 
@@ -351,6 +398,7 @@ mod tests {
     #[test]
     fn collapse() {
         let mut state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, true]),
         };
 
@@ -363,6 +411,7 @@ mod tests {
         assert_eq!(
             state,
             State {
+                collapsed: true,
                 bitmask: BitVec::from_iter([true, false, false, false])
             }
         );
@@ -371,14 +420,17 @@ mod tests {
     #[test]
     fn bitand() {
         let state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, true, false, true]),
         };
 
         let rhs = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, false]),
         };
 
         let output = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, true, false, false]),
         };
 
@@ -388,14 +440,17 @@ mod tests {
     #[test]
     fn bitand_ref() {
         let state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, true, false, true]),
         };
 
         let rhs = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, false]),
         };
 
         let output = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, true, false, false]),
         };
 
@@ -405,14 +460,17 @@ mod tests {
     #[test]
     fn bitand_assign() {
         let mut state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, true, false, true]),
         };
 
         let rhs = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, false]),
         };
 
         let output = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, true, false, false]),
         };
 
@@ -424,14 +482,17 @@ mod tests {
     #[test]
     fn bitand_assign_ref() {
         let mut state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, true, false, true]),
         };
 
         let rhs = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, false]),
         };
 
         let output = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, true, false, false]),
         };
 
@@ -443,14 +504,17 @@ mod tests {
     #[test]
     fn bitor() {
         let state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, true, false, true]),
         };
 
         let rhs = State {
             bitmask: BitVec::from_iter([true, true, false, false]),
+            collapsed: false,
         };
 
         let output = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, true]),
         };
 
@@ -460,14 +524,17 @@ mod tests {
     #[test]
     fn bitor_ref() {
         let state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, true, false, true]),
         };
 
         let rhs = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, false]),
         };
 
         let output = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, true]),
         };
 
@@ -477,14 +544,17 @@ mod tests {
     #[test]
     fn bitor_assign() {
         let mut state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, true, false, true]),
         };
 
         let rhs = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, false]),
         };
 
         let output = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, true]),
         };
 
@@ -496,14 +566,17 @@ mod tests {
     #[test]
     fn bitor_assign_ref() {
         let mut state = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([false, true, false, true]),
         };
 
         let rhs = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, false]),
         };
 
         let output = State {
+            collapsed: false,
             bitmask: BitVec::from_iter([true, true, false, true]),
         };
 

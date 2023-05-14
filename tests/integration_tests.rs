@@ -1,3 +1,4 @@
+use rand::rngs::StdRng;
 use tiled_wfc::{
     validation::{valid_adjacencies_map, validate_solution},
     AxisPair, Tile, WFC,
@@ -97,7 +98,7 @@ pub enum Socket {
 
 #[test]
 fn char_tile() {
-    let mut wfc = WFC::builder()
+    let mut wfc = WFC::<_, 2, _, StdRng>::builder()
         .tile_set(TILE_SET)
         .dimensions([80, 40])
         .seed(422)
