@@ -1,9 +1,9 @@
 use rand::{distributions::WeightedIndex, prelude::Distribution, seq::IteratorRandom, Rng};
 
-use crate::Weighted;
+use crate::{StateError, Weighted};
 
 pub trait Collapser {
-    fn collapse<I, R>(&self, states: I, rng: &mut R) -> usize
+    fn collapse<I, R>(&self, states: I, rng: &mut R) -> Result<usize, StateError>
     where
         I: IntoIterator<Item = usize>,
         R: Rng;
@@ -13,7 +13,7 @@ pub trait Collapser {
 pub struct UnweightedCollapser;
 
 impl Collapser for UnweightedCollapser {
-    fn collapse<I, R>(&self, states: I, rng: &mut R) -> usize
+    fn collapse<I, R>(&self, states: I, rng: &mut R) -> Result<usize, StateError>
     where
         I: IntoIterator<Item = usize>,
         R: Rng,
@@ -21,7 +21,7 @@ impl Collapser for UnweightedCollapser {
         states
             .into_iter()
             .choose(rng)
-            .expect("`states` to contain at least one state")
+            .ok_or(StateError::NoViableState)
     }
 }
 
@@ -43,7 +43,7 @@ where
 }
 
 impl Collapser for WeightedCollapser {
-    fn collapse<I, R>(&self, states: I, rng: &mut R) -> usize
+    fn collapse<I, R>(&self, states: I, rng: &mut R) -> Result<usize, StateError>
     where
         I: IntoIterator<Item = usize>,
         R: Rng,
@@ -55,16 +55,16 @@ impl Collapser for WeightedCollapser {
             weights.push(
                 self.weights
                     .get(*index)
-                    .expect("`states` to yeild valid states"),
+                    .ok_or(StateError::StateIndexOutOfBounds)?,
             );
         }
 
-        let distribution =
-            WeightedIndex::new(weights).expect("`states` to contain at least one viable state");
+        let distribution = WeightedIndex::new(weights).map_err(|_| StateError::NoViableState)?;
 
-        *states
+        states
             .get(distribution.sample(rng))
-            .expect("`distribution.sample(rng)` should return a valid index because `weights` is same length as `states`")
+            .map(|index| *index)
+            .ok_or(StateError::NoViableState)
     }
 }
 
@@ -101,7 +101,7 @@ mod tests {
 
         let mut rng = StepRng::new(0, u64::MAX / 3);
 
-        assert_eq!(collapser.collapse(states, &mut rng), 0);
+        assert_eq!(collapser.collapse(states, &mut rng), Ok(0));
 
         // Assertions pass but StepRng makes this test slow I don't know why.
         // assert_eq!(collapser.collapse(states, &mut rng), 1);
@@ -109,7 +109,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn unweighted_collapser_empty_states() {
         let collapser = UnweightedCollapser;
 
@@ -117,7 +116,10 @@ mod tests {
 
         let mut rng = StepRng::new(0, 0);
 
-        collapser.collapse(states, &mut rng);
+        assert_eq!(
+            collapser.collapse(states, &mut rng),
+            Err(StateError::NoViableState)
+        );
     }
 
     #[test]
@@ -130,13 +132,12 @@ mod tests {
 
         let mut rng = StepRng::new(0, u64::MAX / 4);
 
-        assert_eq!(collapser.collapse(states, &mut rng), 1);
-        assert_eq!(collapser.collapse(states, &mut rng), 2);
-        assert_eq!(collapser.collapse(states, &mut rng), 2);
+        assert_eq!(collapser.collapse(states, &mut rng), Ok(1));
+        assert_eq!(collapser.collapse(states, &mut rng), Ok(2));
+        assert_eq!(collapser.collapse(states, &mut rng), Ok(2));
     }
 
     #[test]
-    #[should_panic]
     fn weighted_collapser_empty_states() {
         let collapser = WeightedCollapser {
             weights: Vec::new(),
@@ -146,11 +147,13 @@ mod tests {
 
         let mut rng = StepRng::new(0, 0);
 
-        collapser.collapse(states, &mut rng);
+        assert_eq!(
+            collapser.collapse(states, &mut rng),
+            Err(StateError::NoViableState)
+        );
     }
 
     #[test]
-    #[should_panic]
     fn weighted_collapser_empty_weights() {
         let collapser = WeightedCollapser {
             weights: Vec::new(),
@@ -160,6 +163,9 @@ mod tests {
 
         let mut rng = StepRng::new(0, 0);
 
-        collapser.collapse(states, &mut rng);
+        assert_eq!(
+            collapser.collapse(states, &mut rng),
+            Err(StateError::StateIndexOutOfBounds)
+        );
     }
 }

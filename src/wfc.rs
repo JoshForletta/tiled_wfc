@@ -193,18 +193,17 @@ where
         Ok(cumulative_valid_adjacencies)
     }
 
-    pub fn collapse_state(&mut self, index: usize) -> State {
-        self.matrix
-            .get_mut(index)
-            .expect("`index` is a valid index")
-            .collapse(&self.collapser, &mut self.rng)
-    }
-
     pub fn collapse(&mut self) -> Result<(), ()> {
         let mut stack = Vec::new();
 
         while let Some(index) = self.least_entropic_index() {
-            let remaining_state = self.collapse_state(index);
+            let state = &mut self.matrix[index];
+            let mut remaining_state = state.clone();
+            let state_index = state
+                .collapse(&self.collapser, &mut self.rng)
+                .expect("valid state");
+
+            remaining_state.set(state_index, false);
 
             self.propagation_stack.push(index);
 

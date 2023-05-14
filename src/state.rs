@@ -98,22 +98,17 @@ impl State {
         changed
     }
 
-    pub fn collapse<C, R>(&mut self, collapser: &C, rng: &mut R) -> Self
+    pub fn collapse<C, R>(&mut self, collapser: &C, rng: &mut R) -> Result<usize, StateError>
     where
         C: Collapser,
         R: Rng,
     {
-        let index = collapser.collapse(self.bitmask.iter_ones(), rng);
+        let index = collapser.collapse(self.bitmask.iter_ones(), rng)?;
 
-        let mut remaining_state = self.clone();
-        let mut bitmask = BitVec::repeat(false, self.bitmask.len());
+        self.bitmask.set_elements(0);
+        self.set(index, true);
 
-        remaining_state.set(index, false);
-        bitmask.set(index, true);
-
-        self.bitmask = bitmask;
-
-        remaining_state
+        Ok(index)
     }
 }
 
@@ -363,7 +358,7 @@ mod tests {
 
         let mut rng = StepRng::new(0, 0);
 
-        state.collapse(&collapser, &mut rng);
+        state.collapse(&collapser, &mut rng).expect("valid state");
 
         assert_eq!(
             state,
