@@ -1,14 +1,61 @@
-use tiled_wfc::{AxisPair, Tile, WFC};
+use tiled_wfc::{
+    validation::{valid_adjacencies_map, validate_solution},
+    AxisPair, Tile, WFC,
+};
 
 use Socket::*;
 
 const TILE_SET: &[CharTile] = &[
+    CharTile::new(' ', Empty, Empty, Empty, Empty),
     CharTile::new('─', Normal, Normal, Empty, Empty),
+    CharTile::new('━', Bold, Bold, Empty, Empty),
     CharTile::new('│', Empty, Empty, Normal, Normal),
+    CharTile::new('┃', Empty, Empty, Bold, Bold),
+    CharTile::new('┄', Normal, Normal, Empty, Empty),
+    CharTile::new('┅', Bold, Bold, Empty, Empty),
+    CharTile::new('┆', Empty, Empty, Normal, Normal),
+    CharTile::new('┇', Empty, Empty, Bold, Bold),
+    CharTile::new('┈', Normal, Normal, Empty, Empty),
+    CharTile::new('┉', Bold, Bold, Empty, Empty),
+    CharTile::new('┊', Empty, Empty, Normal, Normal),
+    CharTile::new('┋', Empty, Empty, Bold, Bold),
     CharTile::new('┌', Normal, Empty, Empty, Normal),
+    CharTile::new('┏', Bold, Empty, Empty, Bold),
     CharTile::new('┐', Empty, Normal, Empty, Normal),
+    CharTile::new('┓', Empty, Bold, Empty, Bold),
     CharTile::new('└', Normal, Empty, Normal, Empty),
+    CharTile::new('┗', Bold, Empty, Bold, Empty),
     CharTile::new('┘', Empty, Normal, Normal, Empty),
+    CharTile::new('┛', Empty, Bold, Bold, Empty),
+    CharTile::new('├', Normal, Empty, Normal, Normal),
+    CharTile::new('┣', Bold, Empty, Bold, Bold),
+    CharTile::new('┤', Empty, Normal, Normal, Normal),
+    CharTile::new('┫', Empty, Bold, Bold, Bold),
+    CharTile::new('┬', Normal, Normal, Empty, Normal),
+    CharTile::new('┳', Bold, Bold, Empty, Bold),
+    CharTile::new('┴', Normal, Normal, Normal, Empty),
+    CharTile::new('┻', Bold, Bold, Bold, Empty),
+    CharTile::new('┼', Normal, Normal, Normal, Normal),
+    CharTile::new('╋', Bold, Bold, Bold, Bold),
+    CharTile::new('╌', Normal, Normal, Empty, Empty),
+    CharTile::new('╍', Bold, Bold, Empty, Empty),
+    CharTile::new('╎', Empty, Empty, Normal, Normal),
+    CharTile::new('╏', Empty, Empty, Bold, Bold),
+    CharTile::new('═', Double, Double, Empty, Empty),
+    CharTile::new('║', Empty, Empty, Double, Double),
+    CharTile::new('╔', Double, Empty, Empty, Double),
+    CharTile::new('╗', Empty, Double, Empty, Double),
+    CharTile::new('╚', Double, Empty, Double, Empty),
+    CharTile::new('╝', Empty, Double, Double, Empty),
+    CharTile::new('╠', Double, Empty, Double, Double),
+    CharTile::new('╣', Empty, Double, Double, Double),
+    CharTile::new('╦', Double, Double, Empty, Double),
+    CharTile::new('╩', Double, Double, Double, Empty),
+    CharTile::new('╬', Double, Double, Double, Double),
+    CharTile::new('╭', Normal, Empty, Empty, Normal),
+    CharTile::new('╮', Empty, Normal, Empty, Normal),
+    CharTile::new('╯', Empty, Normal, Normal, Empty),
+    CharTile::new('╰', Normal, Empty, Normal, Empty),
 ];
 
 #[derive(Debug, Clone, Copy)]
@@ -44,18 +91,20 @@ impl Tile<2> for CharTile {
 pub enum Socket {
     Empty,
     Normal,
+    Bold,
+    Double,
 }
 
 #[test]
 fn char_tile() {
     let mut wfc = WFC::builder()
         .tile_set(TILE_SET)
-        .dimensions([20, 10])
-        .seed(69)
+        .dimensions([80, 40])
+        .seed(422)
         .build()
         .unwrap();
 
-    wfc.collapse().unwrap();
+    wfc.collapse().expect("solution");
 
     let lines = wfc.matrix().matrix().chunks(wfc.dimensions()[0]).rev();
 
@@ -67,4 +116,9 @@ fn char_tile() {
 
         println!("{}", line);
     }
+
+    assert!(validate_solution(
+        wfc.matrix(),
+        &valid_adjacencies_map(TILE_SET)
+    ));
 }
