@@ -4,8 +4,8 @@ use nd_matrix::{Matrix, ToIndex};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{
-    validation::valid_adjacencies_map, AxisPair, Collapser, State, StateError, Tile,
-    UnweightedCollapser, Weighted, WeightedCollapser,
+    validation::{valid_adjacencies_from_state, valid_adjacencies_map},
+    AxisPair, Collapser, State, StateError, Tile, UnweightedCollapser, Weighted, WeightedCollapser,
 };
 
 pub struct WFCBuilder<'a, T, const D: usize, R, C = UnweightedCollapser> {
@@ -215,27 +215,6 @@ where
         self.tile_set.get(state.state_index()?)
     }
 
-    pub fn get_valid_adjacencies(&self, state: &State) -> Result<[AxisPair<State>; D], StateError> {
-        let empty_state = State::fill(false, self.tile_set.len());
-        let empty_pair = AxisPair::new(empty_state.clone(), empty_state.clone());
-        let mut cumulative_valid_adjacencies: [AxisPair<State>; D] =
-            from_fn(|_| empty_pair.clone());
-
-        for state_index in state.state_indexes() {
-            let valid_adjacencies = self
-                .valid_adjacencies_map
-                .get(state_index)
-                .ok_or(StateError::StateIndexOutOfBounds)?;
-
-            for dimension in 0..D {
-                cumulative_valid_adjacencies[dimension].pos |= &valid_adjacencies[dimension].pos;
-                cumulative_valid_adjacencies[dimension].neg |= &valid_adjacencies[dimension].neg;
-            }
-        }
-
-        Ok(cumulative_valid_adjacencies)
-    }
-
     pub fn least_entropic_index(&self) -> Option<usize> {
         self.matrix
             .matrix()
@@ -291,7 +270,8 @@ where
         while let Some(index) = changed.pop() {
             let state = &self.matrix[index];
 
-            let valid_adjacencies = self.get_valid_adjacencies(state).unwrap();
+            let valid_adjacencies =
+                valid_adjacencies_from_state(state, &self.valid_adjacencies_map);
             let adjacent_indexes = self.matrix.get_adjacent_indexes(index);
 
             for dimension in 0..D {
