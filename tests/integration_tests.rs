@@ -1,7 +1,6 @@
-use rand::rngs::StdRng;
 use tiled_wfc::{
     validation::{valid_adjacencies_map, validate_solution},
-    AxisPair, Tile, WFC,
+    AxisPair, Tile, Weighted, WFC,
 };
 
 use Socket::*;
@@ -88,6 +87,12 @@ impl Tile<2> for CharTile {
     }
 }
 
+impl Weighted for CharTile {
+    fn weight(&self) -> u32 {
+        0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Socket {
     Empty,
@@ -98,10 +103,10 @@ pub enum Socket {
 
 #[test]
 fn char_tile() {
-    let mut wfc = WFC::<_, 2, _, StdRng>::builder()
+    let mut wfc = WFC::builder()
         .tile_set(TILE_SET)
         .dimensions([80, 40])
-        .seed(422)
+        .seed_from_u64(422)
         .build()
         .unwrap();
 

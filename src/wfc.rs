@@ -1,21 +1,21 @@
 use std::{array::from_fn, collections::HashMap, marker::PhantomData};
 
 use nd_matrix::{Matrix, ToIndex};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, rngs::StdRng, SeedableRng};
 
 use crate::{
     validation::valid_adjacencies_map, AxisPair, Collapser, State, StateError, Tile,
     UnweightedCollapser, Weighted, WeightedCollapser,
 };
 
-pub struct WFCBuilder<'a, T, const D: usize, C = UnweightedCollapser> {
+pub struct WFCBuilder<'a, T, const D: usize, R, C = UnweightedCollapser> {
     tile_set: Option<&'a [T]>,
     dimensions: Option<[usize; D]>,
     _collapser: PhantomData<C>,
-    rng: Option<StdRng>,
+    rng: Option<R>,
 }
 
-impl<'a, T, C, const D: usize> WFCBuilder<'a, T, D, C> {
+impl<'a, T, const D: usize, R, C> WFCBuilder<'a, T, D, R, C> {
     pub fn tile_set(mut self, tile_set: &'a [T]) -> Self {
         self.tile_set = Some(tile_set);
         self
@@ -26,17 +26,34 @@ impl<'a, T, C, const D: usize> WFCBuilder<'a, T, D, C> {
         self
     }
 
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.rng = Some(StdRng::seed_from_u64(seed));
+    pub fn rng(mut self, rng: R) -> Self {
+        self.rng = Some(rng);
         self
     }
 }
 
-impl<'a, T, C, const D: usize> WFCBuilder<'a, T, D, C>
+impl<'a, T, const D: usize, C> WFCBuilder<'a, T, D, StdRng, C> {
+    pub fn seed(mut self, seed: <StdRng as SeedableRng>::Seed) -> Self {
+        self.rng = Some(StdRng::from_seed(seed));
+        self
+    }
+
+    pub fn seed_from_u64(mut self, state: u64) -> Self {
+        self.rng = Some(StdRng::seed_from_u64(state));
+        self
+    }
+
+    pub fn from_entropy(mut self) -> Self {
+        self.rng = Some(StdRng::from_entropy());
+        self
+    }
+}
+
+impl<'a, T, const D: usize, R, C> WFCBuilder<'a, T, D, R, C>
 where
     T: Weighted,
 {
-    pub fn weighted(self) -> WFCBuilder<'a, T, D, WeightedCollapser> {
+    pub fn weighted(self) -> WFCBuilder<'a, T, D, R, WeightedCollapser> {
         WFCBuilder {
             tile_set: self.tile_set,
             dimensions: self.dimensions,
@@ -46,12 +63,13 @@ where
     }
 }
 
-impl<'a, T, const D: usize> WFCBuilder<'a, T, D, UnweightedCollapser>
+impl<'a, T, const D: usize, R> WFCBuilder<'a, T, D, R, UnweightedCollapser>
 where
     T: Tile<D>,
 {
-    pub fn build(self) -> Result<WFC<'a, T, D, UnweightedCollapser>, ()> {
-        let WFCBuilder { tile_set: Some(tile_set), dimensions: Some(dimensions), _collapser, rng } = self else {
+    pub fn build(self) -> Result<WFC<'a, T, D, R, UnweightedCollapser>, ()> {
+        // TODO: split deconstruction to git better error messages
+        let WFCBuilder { tile_set: Some(tile_set), dimensions: Some(dimensions), _collapser, rng: Some(rng) } = self else {
             return Err(());
         };
 
@@ -62,19 +80,20 @@ where
             propagation_stack: Vec::new(),
             propagation_records: Vec::new(),
             collapser: UnweightedCollapser,
-            rng: rng.unwrap_or(StdRng::from_entropy()),
+            rng,
             matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
         })
     }
 }
 
-impl<'a, T, const D: usize> WFCBuilder<'a, T, D, WeightedCollapser>
+impl<'a, T, const D: usize, R> WFCBuilder<'a, T, D, R, WeightedCollapser>
 where
     T: Tile<D> + Weighted,
     &'a T: Weighted,
 {
-    pub fn build(self) -> Result<WFC<'a, T, D, WeightedCollapser>, ()> {
-        let WFCBuilder { tile_set: Some(tile_set), dimensions: Some(dimensions), _collapser, rng } = self else {
+    pub fn build(self) -> Result<WFC<'a, T, D, R, WeightedCollapser>, ()> {
+        // TODO: split deconstruction to git better error messages
+        let WFCBuilder { tile_set: Some(tile_set), dimensions: Some(dimensions), _collapser, rng: Some(rng) } = self else {
             return Err(());
         };
 
@@ -85,30 +104,30 @@ where
             propagation_stack: Vec::new(),
             propagation_records: Vec::new(),
             collapser: WeightedCollapser::from(tile_set),
-            rng: rng.unwrap_or(StdRng::from_entropy()),
+            rng,
             matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
         })
     }
 }
 
-pub struct WFC<'a, T, const D: usize, C = UnweightedCollapser, R = StdRng> {
+pub struct WFC<'a, T, const D: usize, R, C> {
     tile_set: &'a [T],
     valid_adjacencies_map: Vec<[AxisPair<State>; D]>,
     valid_adjacencies_cache: HashMap<State, [AxisPair<State>; D]>,
     propagation_stack: Vec<usize>,
     propagation_records: Vec<(usize, State)>,
-    collapser: C,
     rng: R,
+    collapser: C,
     matrix: Matrix<State, D>,
 }
 
-impl<'a, T, C, const D: usize, R> WFC<'a, T, D, C, R>
+impl<'a, T, const D: usize, R, C> WFC<'a, T, D, R, C>
 where
     T: Tile<D>,
-    C: Collapser,
     R: Rng,
+    C: Collapser,
 {
-    pub fn builder() -> WFCBuilder<'a, T, D, C> {
+    pub fn builder() -> WFCBuilder<'a, T, D, R, C> {
         WFCBuilder {
             tile_set: None,
             dimensions: None,
@@ -215,7 +234,7 @@ where
 
                     continue;
                 }
-                
+
                 self.matrix[index] = remaining_state;
 
                 continue;
@@ -303,7 +322,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bitvec::vec::BitVec;
     use rand::rngs::mock::StepRng;
 
     use super::*;
@@ -323,14 +341,14 @@ mod tests {
 
     #[test]
     fn least_entropic_index() {
-        let mut wfc = WFC::<'_, TestTile, 2, _> {
+        let mut wfc = WFC::<'_, TestTile, 2, _, _> {
             tile_set: &[],
             valid_adjacencies_map: Vec::new(),
             valid_adjacencies_cache: HashMap::new(),
             propagation_stack: Vec::new(),
             propagation_records: Vec::new(),
             collapser: UnweightedCollapser,
-            rng: StdRng::from_entropy(),
+            rng: StepRng::new(0, 0),
             matrix: Matrix::fill([2, 2], State::fill(true, 3)),
         };
 
@@ -349,7 +367,7 @@ mod tests {
 
     #[test]
     fn collapse_state() {
-        let mut wfc = WFC::<'_, TestTile, 2, _, StepRng> {
+        let mut wfc = WFC::<'_, TestTile, 2, StepRng, _> {
             tile_set: &[],
             valid_adjacencies_map: Vec::new(),
             valid_adjacencies_cache: HashMap::new(),
