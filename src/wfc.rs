@@ -1,7 +1,7 @@
 use std::{array::from_fn, collections::HashMap, marker::PhantomData};
 
 use nd_matrix::{Matrix, ToIndex};
-use rand::{Rng, rngs::StdRng, SeedableRng};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{
     validation::valid_adjacencies_map, AxisPair, Collapser, State, StateError, Tile,
@@ -29,6 +29,35 @@ impl<'a, T, const D: usize, R, C> WFCBuilder<'a, T, D, R, C> {
     pub fn rng(mut self, rng: R) -> Self {
         self.rng = Some(rng);
         self
+    }
+
+    fn check(self) -> Result<(&'a [T], [usize; D], R), String> {
+        let mut missing_field_messages = Vec::new();
+
+        if self.tile_set.is_none() {
+            missing_field_messages.push("`tile_set`");
+        }
+
+        if self.dimensions.is_none() {
+            missing_field_messages.push("`dimension`");
+        }
+
+        if self.rng.is_none() {
+            missing_field_messages.push("`rng`");
+        }
+
+        if missing_field_messages.len() == 0 {
+            Ok((
+                self.tile_set.unwrap(),
+                self.dimensions.unwrap(),
+                self.rng.unwrap(),
+            ))
+        } else {
+            Err(format!(
+                "missing feilds: {}",
+                missing_field_messages.join(", ")
+            ))
+        }
     }
 }
 
@@ -67,11 +96,8 @@ impl<'a, T, const D: usize, R> WFCBuilder<'a, T, D, R, UnweightedCollapser>
 where
     T: Tile<D>,
 {
-    pub fn build(self) -> Result<WFC<'a, T, D, R, UnweightedCollapser>, ()> {
-        // TODO: split deconstruction to git better error messages
-        let WFCBuilder { tile_set: Some(tile_set), dimensions: Some(dimensions), _collapser, rng: Some(rng) } = self else {
-            return Err(());
-        };
+    pub fn build(self) -> Result<WFC<'a, T, D, R, UnweightedCollapser>, String> {
+        let (tile_set, dimensions, rng) = self.check()?;
 
         Ok(WFC {
             tile_set,
@@ -91,11 +117,8 @@ where
     T: Tile<D> + Weighted,
     &'a T: Weighted,
 {
-    pub fn build(self) -> Result<WFC<'a, T, D, R, WeightedCollapser>, ()> {
-        // TODO: split deconstruction to git better error messages
-        let WFCBuilder { tile_set: Some(tile_set), dimensions: Some(dimensions), _collapser, rng: Some(rng) } = self else {
-            return Err(());
-        };
+    pub fn build(self) -> Result<WFC<'a, T, D, R, WeightedCollapser>, String> {
+        let (tile_set, dimensions, rng) = self.check()?;
 
         Ok(WFC {
             tile_set,
