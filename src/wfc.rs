@@ -237,17 +237,17 @@ where
                     continue;
                 }
 
+                if remaining_state.count() == 0 {
+                    self.uncollapse_state(&mut stack)?;
+                    continue;
+                }
+
                 self.matrix[index] = remaining_state;
 
                 continue;
             };
 
-            let (index, remaining_state, propagation_stack) =
-                stack.pop().ok_or(StateError::NoViableState)?;
-
-            self.matrix[index] = remaining_state;
-
-            self.unpropagate(propagation_stack);
+            self.uncollapse_state(&mut stack)?;
         }
 
         Ok(())
@@ -261,6 +261,25 @@ where
         remaining_state.set(state_index, false);
 
         Ok(remaining_state)
+    }
+
+    pub fn uncollapse_state(
+        &mut self,
+        stack: &mut Vec<(usize, State, Vec<(usize, State)>)>,
+    ) -> Result<(), StateError> {
+        let (index, remaining_state, propagation_stack) =
+            stack.pop().ok_or(StateError::NoViableState)?;
+
+        if remaining_state.count() == 0 {
+            self.unpropagate(propagation_stack);
+            return self.uncollapse_state(stack);
+        }
+
+        self.matrix[index] = remaining_state;
+
+        self.unpropagate(propagation_stack);
+
+        Ok(())
     }
 
     pub fn propagate(&mut self, index: usize) -> Result<Vec<(usize, State)>, StateError> {
@@ -279,6 +298,8 @@ where
                     let adjacent_state = &mut self.matrix[adjacent_index];
                     let valid_state = &valid_adjacencies[dimension].pos;
 
+                    assert_ne!(adjacent_state.count(), 0);
+
                     if !valid_state.contains(&adjacent_state) {
                         if adjacent_state.is_collapsed() {
                             self.unpropagate(propagation_record);
@@ -288,6 +309,11 @@ where
                         propagation_record.push((adjacent_index, adjacent_state.clone()));
 
                         adjacent_state.constrain(valid_state);
+
+                        if adjacent_state.count() == 0 {
+                            self.unpropagate(propagation_record);
+                            return Err(StateError::NoViableState);
+                        }
 
                         changed.push(adjacent_index);
                     }
@@ -297,6 +323,8 @@ where
                     let adjacent_state = &mut self.matrix[adjacent_index];
                     let valid_state = &valid_adjacencies[dimension].neg;
 
+                    assert_ne!(adjacent_state.count(), 0);
+
                     if !valid_state.contains(&adjacent_state) {
                         if adjacent_state.is_collapsed() {
                             self.unpropagate(propagation_record);
@@ -306,6 +334,11 @@ where
                         propagation_record.push((adjacent_index, adjacent_state.clone()));
 
                         adjacent_state.constrain(valid_state);
+
+                        if adjacent_state.count() == 0 {
+                            self.unpropagate(propagation_record);
+                            return Err(StateError::NoViableState);
+                        }
 
                         changed.push(adjacent_index);
                     }
