@@ -1,3 +1,4 @@
+// TODO: runtime decided weighted/unweighted collapser
 use rand::{distributions::WeightedIndex, prelude::Distribution, seq::IteratorRandom, Rng};
 
 use crate::{StateError, Weighted};
