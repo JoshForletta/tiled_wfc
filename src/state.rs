@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     fmt::Display,
-    iter::{once, Once},
+    iter::{once, repeat, Once},
 };
 
 use rand::Rng;
@@ -37,6 +37,28 @@ pub enum State {
 }
 
 impl State {
+    /// Return `Superimposed` containing states up to `len` noninclusive.
+    ///
+    /// # Panics
+    ///
+    /// if `len` exceeds `Superposition::MAX`
+    pub fn fill(len: usize) -> Self {
+        Self::Superimposed(Superposition::fill(len))
+    }
+
+    /// returns `Superimposed` containing states yielded `true` from `states`
+    ///
+    /// # Panics
+    ///
+    /// if number of states yielded from `states` exceeds `Superpositon::MAX`
+    pub fn from_iter<I>(states: I) -> Self
+    where
+        I: IntoIterator,
+        <I as IntoIterator>::IntoIter: Iterator<Item = bool>,
+    {
+        Self::Superimposed(Superposition::from_iter(states))
+    }
+
     /// Returns `true` if state is [`Collapsed`]
     pub fn is_collapsed(&self) -> bool {
         match self {
@@ -118,6 +140,15 @@ pub struct Superposition {
 
 impl Superposition {
     pub const MAX: usize = u128::BITS as usize;
+
+    /// Returns `Superposition` containing states up to `len` noninclusive.
+    ///
+    /// # Panics
+    ///
+    /// if `len` exceeds `Superposition::MAX`
+    pub fn fill(len: usize) -> Self {
+        Self::from_iter(repeat(true).take(len))
+    }
 
     /// returns `Superpostition` containing states yielded `true` from `states`
     ///
@@ -246,6 +277,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fill() {
+        let s = State::fill(3);
+
+        assert_eq!(
+            s,
+            State::Superimposed(Superposition::from_iter([true, true, true]))
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn fill_exceeds_max() {
+        let s = State::fill(Superposition::MAX + 1);
+    }
+
+    #[test]
+    fn from_iter() {
+        let s = State::from_iter([true, false, false, true]);
+
+        match s {
+            State::Collapsed(_) => unreachable!(),
+            State::Superimposed(s) => {
+                assert!(s.contains_state(0));
+                assert!(!s.contains_state(1));
+                assert!(!s.contains_state(2));
+                assert!(s.contains_state(3));
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn from_iter_exceeds_max() {
+        use std::iter::repeat;
+
+        State::from_iter(repeat(true).take(Superposition::MAX + 1));
+    }
+
+    #[test]
     fn is_collapsed() {
         let s1 = State::Collapsed(1);
         let s2 = State::Superimposed(Superposition::from_iter([true, false, false]));
@@ -275,6 +345,19 @@ mod tests {
 
     mod sueprposition {
         use super::Superposition;
+
+        #[test]
+        fn fill() {
+            let s = Superposition::fill(3);
+
+            assert_eq!(s, Superposition::from_iter([true, true, true]));
+        }
+
+        #[test]
+        #[should_panic]
+        fn fill_exceeds_max() {
+            let s = Superposition::fill(Superposition::MAX + 1);
+        }
 
         #[test]
         fn from_iter() {
