@@ -1,11 +1,11 @@
-use std::{array::from_fn, collections::HashMap, marker::PhantomData};
+use std::{collections::HashMap, marker::PhantomData};
 
 use nd_matrix::{Matrix, ToIndex};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{
-    validation::{valid_adjacencies_from_state, valid_adjacencies_map},
-    AxisPair, Collapser, State, StateError, Tile, UnweightedCollapser, Weighted, WeightedCollapser,
+    AxisPair, Collapser, State, StateError, Tile,
+    UnweightedCollapser, Weighted, WeightedCollapser,
 };
 
 pub struct WFCBuilder<'a, T, const D: usize, R, C = UnweightedCollapser> {
@@ -97,18 +97,19 @@ where
     T: Tile<D>,
 {
     pub fn build(self) -> Result<WFC<'a, T, D, R, UnweightedCollapser>, String> {
-        let (tile_set, dimensions, rng) = self.check()?;
-
-        Ok(WFC {
-            tile_set,
-            valid_adjacencies_map: valid_adjacencies_map(tile_set),
-            valid_adjacencies_cache: HashMap::new(),
-            propagation_stack: Vec::new(),
-            propagation_records: Vec::new(),
-            collapser: UnweightedCollapser,
-            rng,
-            matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
-        })
+        todo!()
+        // let (tile_set, dimensions, rng) = self.check()?;
+        //
+        // Ok(WFC {
+        //     tile_set,
+        //     valid_adjacencies_map: valid_adjacencies_map(tile_set),
+        //     valid_adjacencies_cache: HashMap::new(),
+        //     propagation_stack: Vec::new(),
+        //     propagation_records: Vec::new(),
+        //     collapser: UnweightedCollapser,
+        //     rng,
+        //     matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
+        // })
     }
 }
 
@@ -118,18 +119,19 @@ where
     &'a T: Weighted,
 {
     pub fn build(self) -> Result<WFC<'a, T, D, R, WeightedCollapser>, String> {
-        let (tile_set, dimensions, rng) = self.check()?;
-
-        Ok(WFC {
-            tile_set,
-            valid_adjacencies_map: valid_adjacencies_map(tile_set),
-            valid_adjacencies_cache: HashMap::new(),
-            propagation_stack: Vec::new(),
-            propagation_records: Vec::new(),
-            collapser: WeightedCollapser::from(tile_set),
-            rng,
-            matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
-        })
+        todo!()
+        // let (tile_set, dimensions, rng) = self.check()?;
+        //
+        // Ok(WFC {
+        //     tile_set,
+        //     valid_adjacencies_map: valid_adjacencies_map(tile_set),
+        //     valid_adjacencies_cache: HashMap::new(),
+        //     propagation_stack: Vec::new(),
+        //     propagation_records: Vec::new(),
+        //     collapser: WeightedCollapser::from(tile_set),
+        //     rng,
+        //     matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
+        // })
     }
 }
 
@@ -212,147 +214,34 @@ where
 
     #[inline(always)]
     pub fn get_tile(&self, state: &State) -> Option<&T> {
-        self.tile_set.get(state.state_index()?)
+        todo!()
     }
 
     pub fn least_entropic_index(&self) -> Option<usize> {
-        self.matrix
-            .matrix()
-            .into_iter()
-            .enumerate()
-            .filter(|(_index, state)| !state.is_collapsed())
-            .map(|(index, state)| (index, state.count()))
-            .min_by(|(_min_index, min_count), (_index, count)| min_count.cmp(count))
-            .map(|(index, _count)| index)
+        todo!()
     }
 
     pub fn collapse(&mut self) -> Result<(), StateError> {
-        let mut stack = Vec::new();
-
-        while let Some(index) = self.least_entropic_index() {
-            if let Ok(remaining_state) = self.collapse_state(index) {
-                if let Ok(propagation_stack) = self.propagate(index) {
-                    stack.push((index, remaining_state, propagation_stack));
-
-                    continue;
-                }
-
-                if remaining_state.count() == 0 {
-                    self.uncollapse_state(&mut stack)?;
-                    continue;
-                }
-
-                self.matrix[index] = remaining_state;
-
-                continue;
-            };
-
-            self.uncollapse_state(&mut stack)?;
-        }
-
-        Ok(())
+        todo!()
     }
 
     pub fn collapse_state(&mut self, index: usize) -> Result<State, StateError> {
-        let state = &mut self.matrix[index];
-        let mut remaining_state = state.clone();
-        let state_index = state.collapse(&self.collapser, &mut self.rng)?;
-
-        remaining_state.set(state_index, false);
-
-        Ok(remaining_state)
+        todo!()
     }
 
     pub fn uncollapse_state(
         &mut self,
         stack: &mut Vec<(usize, State, Vec<(usize, State)>)>,
     ) -> Result<(), StateError> {
-        let (index, remaining_state, propagation_stack) =
-            stack.pop().ok_or(StateError::NoViableState)?;
-
-        if remaining_state.count() == 0 {
-            self.unpropagate(propagation_stack);
-            return self.uncollapse_state(stack);
-        }
-
-        self.matrix[index] = remaining_state;
-
-        self.unpropagate(propagation_stack);
-
-        Ok(())
+        todo!()
     }
 
     pub fn propagate(&mut self, index: usize) -> Result<Vec<(usize, State)>, StateError> {
-        let mut changed = Vec::from([index]);
-        let mut propagation_record = Vec::new();
-
-        while let Some(index) = changed.pop() {
-            let state = &self.matrix[index];
-
-            let valid_adjacencies =
-                valid_adjacencies_from_state(state, &self.valid_adjacencies_map);
-            let adjacent_indexes = self.matrix.get_adjacent_indexes(index);
-
-            for dimension in 0..D {
-                if let Some(adjacent_index) = adjacent_indexes[dimension].pos {
-                    let adjacent_state = &mut self.matrix[adjacent_index];
-                    let valid_state = &valid_adjacencies[dimension].pos;
-
-                    assert_ne!(adjacent_state.count(), 0);
-
-                    if !valid_state.contains(&adjacent_state) {
-                        if adjacent_state.is_collapsed() {
-                            self.unpropagate(propagation_record);
-                            return Err(StateError::NoViableState);
-                        }
-
-                        propagation_record.push((adjacent_index, adjacent_state.clone()));
-
-                        adjacent_state.constrain(valid_state);
-
-                        if adjacent_state.count() == 0 {
-                            self.unpropagate(propagation_record);
-                            return Err(StateError::NoViableState);
-                        }
-
-                        changed.push(adjacent_index);
-                    }
-                }
-
-                if let Some(adjacent_index) = adjacent_indexes[dimension].neg {
-                    let adjacent_state = &mut self.matrix[adjacent_index];
-                    let valid_state = &valid_adjacencies[dimension].neg;
-
-                    assert_ne!(adjacent_state.count(), 0);
-
-                    if !valid_state.contains(&adjacent_state) {
-                        if adjacent_state.is_collapsed() {
-                            self.unpropagate(propagation_record);
-                            return Err(StateError::NoViableState);
-                        }
-
-                        propagation_record.push((adjacent_index, adjacent_state.clone()));
-
-                        adjacent_state.constrain(valid_state);
-
-                        if adjacent_state.count() == 0 {
-                            self.unpropagate(propagation_record);
-                            return Err(StateError::NoViableState);
-                        }
-
-                        changed.push(adjacent_index);
-                    }
-                }
-            }
-        }
-
-        Ok(propagation_record)
+        todo!()
     }
 
     pub fn unpropagate(&mut self, propagation_record: Vec<(usize, State)>) {
-        for (index, state) in propagation_record.into_iter() {
-            self.matrix[index] = state;
-        }
+        todo!()
     }
 }
 
@@ -377,46 +266,48 @@ mod tests {
 
     #[test]
     fn least_entropic_index() {
-        let mut wfc = WFC::<'_, TestTile, 2, _, _> {
-            tile_set: &[],
-            valid_adjacencies_map: Vec::new(),
-            valid_adjacencies_cache: HashMap::new(),
-            propagation_stack: Vec::new(),
-            propagation_records: Vec::new(),
-            collapser: UnweightedCollapser,
-            rng: StepRng::new(0, 0),
-            matrix: Matrix::fill([2, 2], State::fill(true, 3)),
-        };
-
-        let collapser = UnweightedCollapser;
-
-        let mut rng = StepRng::new(0, 0);
-
-        wfc.matrix[0]
-            .collapse(&collapser, &mut rng)
-            .expect("valid state");
-
-        wfc.matrix[1].set(0, false);
-
-        assert_eq!(wfc.least_entropic_index(), Some(1));
+        todo!()
+        // let mut wfc = WFC::<'_, TestTile, 2, _, _> {
+        //     tile_set: &[],
+        //     valid_adjacencies_map: Vec::new(),
+        //     valid_adjacencies_cache: HashMap::new(),
+        //     propagation_stack: Vec::new(),
+        //     propagation_records: Vec::new(),
+        //     collapser: UnweightedCollapser,
+        //     rng: StepRng::new(0, 0),
+        //     matrix: Matrix::fill([2, 2], State::fill(true, 3)),
+        // };
+        //
+        // let collapser = UnweightedCollapser;
+        //
+        // let mut rng = StepRng::new(0, 0);
+        //
+        // wfc.matrix[0]
+        //     .collapse(&collapser, &mut rng)
+        //     .expect("valid state");
+        //
+        // wfc.matrix[1].set(0, false);
+        //
+        // assert_eq!(wfc.least_entropic_index(), Some(1));
     }
 
     #[test]
     fn collapse_state() {
-        let mut wfc = WFC::<'_, TestTile, 2, StepRng, _> {
-            tile_set: &[],
-            valid_adjacencies_map: Vec::new(),
-            valid_adjacencies_cache: HashMap::new(),
-            propagation_stack: Vec::new(),
-            propagation_records: Vec::new(),
-            collapser: UnweightedCollapser,
-            rng: StepRng::new(0, 0),
-            matrix: Matrix::fill([2, 2], State::fill(true, 3)),
-        };
-
-        let remaining_state = wfc.collapse_state(0).expect("viable state");
-
-        assert_eq!(wfc.matrix[0], State::new_collapsed(0, 3));
-        assert_eq!(remaining_state, State::with_indexes([1, 2], 3));
+        todo!()
+        // let mut wfc = WFC::<'_, TestTile, 2, StepRng, _> {
+        //     tile_set: &[],
+        //     valid_adjacencies_map: Vec::new(),
+        //     valid_adjacencies_cache: HashMap::new(),
+        //     propagation_stack: Vec::new(),
+        //     propagation_records: Vec::new(),
+        //     collapser: UnweightedCollapser,
+        //     rng: StepRng::new(0, 0),
+        //     matrix: Matrix::fill([2, 2], State::fill(true, 3)),
+        // };
+        //
+        // let remaining_state = wfc.collapse_state(0).expect("viable state");
+        //
+        // assert_eq!(wfc.matrix[0], State::new_collapsed(0));
+        // assert_eq!(remaining_state, State::with_indexes([1, 2], 3));
     }
 }

@@ -56,7 +56,7 @@ impl Collapser for WeightedCollapser {
             weights.push(
                 self.weights
                     .get(*index)
-                    .ok_or(StateError::StateIndexOutOfBounds)?,
+                    .ok_or(StateError::StateOutOfDomainBounds)?,
             );
         }
 
@@ -166,7 +166,7 @@ mod tests {
 
         assert_eq!(
             collapser.collapse(states, &mut rng),
-            Err(StateError::StateIndexOutOfBounds)
+            Err(StateError::StateOutOfDomainBounds)
         );
     }
 }
