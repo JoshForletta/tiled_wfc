@@ -1,4 +1,8 @@
-use std::{error::Error, fmt::Display, iter::Once};
+use std::{
+    error::Error,
+    fmt::Display,
+    iter::{once, Once},
+};
 
 use rand::Rng;
 
@@ -35,7 +39,10 @@ pub enum State {
 impl State {
     /// Returns `true` if state is [`Collapsed`]
     pub fn is_collapsed(&self) -> bool {
-        todo!()
+        match self {
+            State::Collapsed(_) => true,
+            State::Superimposed(_) => false,
+        }
     }
 
     // /// Collapses `self` using [`collapser`](super::Collapser) with [`rng`].
@@ -69,6 +76,20 @@ impl Default for State {
     }
 }
 
+impl<'a> IntoIterator for &'a State {
+    type Item = usize;
+    type IntoIter = StateIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            State::Collapsed(state) => StateIter::Collapsed(once(*state)),
+            State::Superimposed(superposition) => {
+                StateIter::Superimposed(superposition.into_iter())
+            }
+        }
+    }
+}
+
 /// An iterator over [`&State`].
 ///
 /// This `struct` is created by the [`into_iter`] method on [`&State`](State).
@@ -82,7 +103,10 @@ impl<'a> Iterator for StateIter<'a> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        match self {
+            StateIter::Collapsed(iter) => iter.next(),
+            StateIter::Superimposed(iter) => iter.next(),
+        }
     }
 }
 
@@ -125,7 +149,7 @@ impl Superposition {
     fn state_to_bitmask(state: usize) -> u128 {
         1u128
             .checked_shl(state as u32)
-            .expect("`states` iterator exceeded `Superpositon::MAX`")
+            .expect("`state` exceeds `Superpositon::MAX`")
     }
 
     /// return `true` if `state` is contained with self
@@ -179,6 +203,19 @@ impl Superposition {
     }
 }
 
+impl<'a> IntoIterator for &'a Superposition {
+    type Item = usize;
+    type IntoIter = SuperpositionIter<'a>;
+
+    /// returns an iterator of all states contained within `self`.
+    fn into_iter(self) -> Self::IntoIter {
+        SuperpositionIter {
+            superposition: self,
+            next_state: 0,
+        }
+    }
+}
+
 /// An iterator over [`&Superposition`].
 ///
 /// This `struct` is created by the [`into_iter`] method on [`&Superposition`](Superpositon).
@@ -186,28 +223,55 @@ impl Superposition {
 #[derive(Debug, Clone)]
 pub struct SuperpositionIter<'a> {
     superposition: &'a Superposition,
+    next_state: usize,
 }
 
 impl<'a> Iterator for SuperpositionIter<'a> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
-    }
-}
+        for state in self.next_state..Superposition::MAX {
+            if self.superposition.contains_state(state) {
+                self.next_state = state + 1;
+                return Some(state);
+            }
+        }
 
-impl<'a> IntoIterator for &'a Superposition {
-    type Item = usize;
-    type IntoIter = SuperpositionIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        todo!()
+        None
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_collapsed() {
+        let s1 = State::Collapsed(1);
+        let s2 = State::Superimposed(Superposition::from_iter([true, false, false]));
+
+        assert!(s1.is_collapsed());
+        assert!(!s2.is_collapsed());
+    }
+
+    #[test]
+    fn into_iter_collapsed() {
+        let s = State::Collapsed(1);
+        let mut s_iter = s.into_iter();
+
+        assert_eq!(s_iter.next(), Some(1));
+        assert_eq!(s_iter.next(), None);
+    }
+
+    #[test]
+    fn into_iter_superimposed() {
+        let s = State::Superimposed(Superposition::from_iter([false, true, false, true, false]));
+        let mut s_iter = s.into_iter();
+
+        assert_eq!(s_iter.next(), Some(1));
+        assert_eq!(s_iter.next(), Some(3));
+        assert_eq!(s_iter.next(), None)
+    }
 
     mod sueprposition {
         use super::Superposition;
@@ -319,6 +383,16 @@ mod tests {
             s1.constrain(&s2);
 
             assert_eq!(s1, Superposition::from_iter([false, false, false, true]));
+        }
+
+        #[test]
+        fn into_iter() {
+            let s = Superposition::from_iter([false, true, false, true, false]);
+            let mut s_iter = s.into_iter();
+
+            assert_eq!(s_iter.next(), Some(1));
+            assert_eq!(s_iter.next(), Some(3));
+            assert_eq!(s_iter.next(), None)
         }
     }
 }
