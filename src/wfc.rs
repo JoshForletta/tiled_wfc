@@ -4,18 +4,16 @@ use nd_matrix::{Matrix, ToIndex};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{
-    AxisPair, Collapser, State, StateError, Tile,
-    UnweightedCollapser, Weighted, WeightedCollapser,
+    AxisPair, Collapser, State, StateError, Tile, UnweightedCollapser, Weighted, WeightedCollapser,
 };
 
-pub struct WFCBuilder<'a, T, const D: usize, R, C = UnweightedCollapser> {
+pub struct WFCBuilder<'a, T, const D: usize, C> {
     tile_set: Option<&'a [T]>,
     dimensions: Option<[usize; D]>,
-    _collapser: PhantomData<C>,
-    rng: Option<R>,
+    collapser: Option<C>,
 }
 
-impl<'a, T, const D: usize, R, C> WFCBuilder<'a, T, D, R, C> {
+impl<'a, T, const D: usize, C> WFCBuilder<'a, T, D, C> {
     pub fn tile_set(mut self, tile_set: &'a [T]) -> Self {
         self.tile_set = Some(tile_set);
         self
@@ -26,12 +24,7 @@ impl<'a, T, const D: usize, R, C> WFCBuilder<'a, T, D, R, C> {
         self
     }
 
-    pub fn rng(mut self, rng: R) -> Self {
-        self.rng = Some(rng);
-        self
-    }
-
-    fn check(self) -> Result<(&'a [T], [usize; D], R), String> {
+    fn check(self) -> Result<(&'a [T], [usize; D], C), String> {
         let mut missing_field_messages = Vec::new();
 
         if self.tile_set.is_none() {
@@ -42,15 +35,15 @@ impl<'a, T, const D: usize, R, C> WFCBuilder<'a, T, D, R, C> {
             missing_field_messages.push("`dimension`");
         }
 
-        if self.rng.is_none() {
-            missing_field_messages.push("`rng`");
+        if self.collapser.is_none() {
+            missing_field_messages.push("`collapser`");
         }
 
         if missing_field_messages.len() == 0 {
             Ok((
                 self.tile_set.unwrap(),
                 self.dimensions.unwrap(),
-                self.rng.unwrap(),
+                self.collapser.unwrap(),
             ))
         } else {
             Err(format!(
@@ -61,42 +54,35 @@ impl<'a, T, const D: usize, R, C> WFCBuilder<'a, T, D, R, C> {
     }
 }
 
-impl<'a, T, const D: usize, C> WFCBuilder<'a, T, D, StdRng, C> {
-    pub fn seed(mut self, seed: <StdRng as SeedableRng>::Seed) -> Self {
-        self.rng = Some(StdRng::from_seed(seed));
+impl<'a, T, const D: usize, R> WFCBuilder<'a, T, D, UnweightedCollapser<R>>
+where
+    R: Rng + SeedableRng,
+{
+    pub fn seed(mut self, seed: <R as SeedableRng>::Seed) -> Self {
+        self.collapser = Some(UnweightedCollapser::new(<R as SeedableRng>::from_seed(
+            seed,
+        )));
         self
     }
 
     pub fn seed_from_u64(mut self, state: u64) -> Self {
-        self.rng = Some(StdRng::seed_from_u64(state));
+        self.collapser = Some(UnweightedCollapser::new(<R as SeedableRng>::seed_from_u64(
+            state,
+        )));
         self
     }
 
     pub fn from_entropy(mut self) -> Self {
-        self.rng = Some(StdRng::from_entropy());
+        self.collapser = Some(UnweightedCollapser::new(<R as SeedableRng>::from_entropy()));
         self
     }
 }
 
-impl<'a, T, const D: usize, R, C> WFCBuilder<'a, T, D, R, C>
-where
-    T: Weighted,
-{
-    pub fn weighted(self) -> WFCBuilder<'a, T, D, R, WeightedCollapser> {
-        WFCBuilder {
-            tile_set: self.tile_set,
-            dimensions: self.dimensions,
-            _collapser: PhantomData,
-            rng: self.rng,
-        }
-    }
-}
-
-impl<'a, T, const D: usize, R> WFCBuilder<'a, T, D, R, UnweightedCollapser>
+impl<'a, T, const D: usize, C> WFCBuilder<'a, T, D, C>
 where
     T: Tile<D>,
 {
-    pub fn build(self) -> Result<WFC<'a, T, D, R, UnweightedCollapser>, String> {
+    pub fn build(self) -> Result<WFC<'a, T, D, C>, String> {
         todo!()
         // let (tile_set, dimensions, rng) = self.check()?;
         //
@@ -113,54 +99,34 @@ where
     }
 }
 
-impl<'a, T, const D: usize, R> WFCBuilder<'a, T, D, R, WeightedCollapser>
-where
-    T: Tile<D> + Weighted,
-    &'a T: Weighted,
-{
-    pub fn build(self) -> Result<WFC<'a, T, D, R, WeightedCollapser>, String> {
-        todo!()
-        // let (tile_set, dimensions, rng) = self.check()?;
-        //
-        // Ok(WFC {
-        //     tile_set,
-        //     valid_adjacencies_map: valid_adjacencies_map(tile_set),
-        //     valid_adjacencies_cache: HashMap::new(),
-        //     propagation_stack: Vec::new(),
-        //     propagation_records: Vec::new(),
-        //     collapser: WeightedCollapser::from(tile_set),
-        //     rng,
-        //     matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
-        // })
-    }
-}
-
-pub struct WFC<'a, T, const D: usize, R, C> {
+pub struct WFC<'a, T, const D: usize, C> {
     tile_set: &'a [T],
     valid_adjacencies_map: Vec<[AxisPair<State>; D]>,
     valid_adjacencies_cache: HashMap<State, [AxisPair<State>; D]>,
     propagation_stack: Vec<usize>,
     propagation_records: Vec<(usize, State)>,
-    rng: R,
     collapser: C,
     matrix: Matrix<State, D>,
 }
 
-impl<'a, T, const D: usize, R, C> WFC<'a, T, D, R, C>
+impl<'a, T, const D: usize> WFC<'a, T, D, UnweightedCollapser<StdRng>>
 where
     T: Tile<D>,
-    R: Rng,
-    C: Collapser,
 {
-    pub fn builder() -> WFCBuilder<'a, T, D, R, C> {
+    pub fn builder() -> WFCBuilder<'a, T, D, UnweightedCollapser<StdRng>> {
         WFCBuilder {
             tile_set: None,
             dimensions: None,
-            _collapser: PhantomData,
-            rng: None,
+            collapser: Some(UnweightedCollapser::new(StdRng::from_entropy())),
         }
     }
+}
 
+impl<'a, T, const D: usize, C> WFC<'a, T, D, C>
+where
+    T: Tile<D>,
+    C: Collapser,
+{
     #[inline(always)]
     pub fn matrix(&self) -> &Matrix<State, D> {
         &self.matrix
@@ -184,16 +150,6 @@ where
     #[inline(always)]
     pub fn collapser(&self) -> &C {
         &self.collapser
-    }
-
-    #[inline(always)]
-    pub fn rng(&self) -> &R {
-        &self.rng
-    }
-
-    #[inline(always)]
-    pub fn rng_mut(&mut self) -> &mut R {
-        &mut self.rng
     }
 
     #[inline(always)]

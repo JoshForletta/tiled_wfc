@@ -1,55 +1,82 @@
 // TODO: runtime decided weighted/unweighted collapser
+
 use rand::{distributions::WeightedIndex, prelude::Distribution, seq::IteratorRandom, Rng};
 
-use crate::{StateError, Weighted};
+use crate::{State, StateError, Weighted};
 
 pub trait Collapser {
-    fn collapse<I, R>(&self, states: I, rng: &mut R) -> Result<usize, StateError>
-    where
-        I: IntoIterator<Item = usize>,
-        R: Rng;
+    /// Collapses `state`.
+    fn collapse(&mut self, state: &mut State) -> Result<(), StateError>;
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub struct UnweightedCollapser;
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct UnweightedCollapser<R> {
+    rng: R,
+}
 
-impl Collapser for UnweightedCollapser {
-    fn collapse<I, R>(&self, states: I, rng: &mut R) -> Result<usize, StateError>
-    where
-        I: IntoIterator<Item = usize>,
-        R: Rng,
-    {
-        states
+impl<R> UnweightedCollapser<R>
+where
+    R: Rng,
+{
+    /// Returns an [`UnweightedCollapser`] with `rng`.
+    pub fn new(rng: R) -> Self {
+        Self { rng }
+    }
+}
+
+impl<R> Collapser for UnweightedCollapser<R>
+where
+    R: Rng,
+{
+    /// Randomly collapses `state`.
+    ///
+    /// # Errors
+    ///
+    /// if `state` contains no viable state.
+    fn collapse(&mut self, state: &mut State) -> Result<(), StateError> {
+        let state_index = state
             .into_iter()
-            .choose(rng)
-            .ok_or(StateError::NoViableState)
+            .choose(&mut self.rng)
+            .ok_or(StateError::NoViableState)?;
+
+        *state = State::Collapsed(state_index);
+
+        Ok(())
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct WeightedCollapser {
+pub struct WeightedCollapser<R> {
     weights: Vec<u32>,
+    rng: R,
 }
 
-impl<I> From<I> for WeightedCollapser
-where
-    I: IntoIterator,
-    <I as IntoIterator>::Item: Weighted,
-{
-    fn from(tile_set: I) -> Self {
+impl<R> WeightedCollapser<R> {
+    /// Returns a [`WeightedCollapser`] with `rng` and a weighted distribution
+    /// of tiles from `tile_set`.
+    pub fn with_tile_set<T>(rng: R, tile_set: &[T]) -> Self
+    where
+        T: Weighted,
+    {
         Self {
             weights: tile_set.into_iter().map(|tile| tile.weight()).collect(),
+            rng,
         }
     }
 }
 
-impl Collapser for WeightedCollapser {
-    fn collapse<I, R>(&self, states: I, rng: &mut R) -> Result<usize, StateError>
-    where
-        I: IntoIterator<Item = usize>,
-        R: Rng,
-    {
-        let states: Vec<usize> = states.into_iter().collect();
+impl<R> Collapser for WeightedCollapser<R>
+where
+    R: Rng,
+{
+    /// Randomly collapses `state` with a weighted distribution.
+    ///
+    /// # Errors
+    ///
+    /// - if `state` contains no viable state.
+    /// - if `state` contains a state out side of domain bounds.
+    fn collapse(&mut self, state: &mut State) -> Result<(), StateError> {
+        let states: Vec<usize> = state.into_iter().collect();
         let mut weights = Vec::with_capacity(states.len());
 
         for index in &states {
@@ -62,10 +89,14 @@ impl Collapser for WeightedCollapser {
 
         let distribution = WeightedIndex::new(weights).map_err(|_| StateError::NoViableState)?;
 
-        states
-            .get(distribution.sample(rng))
+        let state_index = states
+            .get(distribution.sample(&mut self.rng))
             .map(|index| *index)
-            .ok_or(StateError::NoViableState)
+            .ok_or(StateError::NoViableState)?;
+
+        *state = State::Collapsed(state_index);
+
+        Ok(())
     }
 }
 
@@ -73,7 +104,15 @@ impl Collapser for WeightedCollapser {
 mod tests {
     use rand::rngs::mock::StepRng;
 
+    use crate::state::Superposition;
+
     use super::*;
+
+    const TILE_SET: &[TestWeightedTile] = &[
+        TestWeightedTile(0),
+        TestWeightedTile(3),
+        TestWeightedTile(7),
+    ];
 
     struct TestWeightedTile(u32);
 
@@ -83,89 +122,77 @@ mod tests {
         }
     }
 
-    #[test]
-    fn weighted_collapser_from() {
-        let collapser = WeightedCollapser::from([
-            TestWeightedTile(0),
-            TestWeightedTile(3),
-            TestWeightedTile(7),
-        ]);
+    fn assert_collapse<C>(collapser: &mut C, state: &State)
+    where
+        C: Collapser,
+    {
+        let mut collapsed_state = state.clone();
 
-        assert_eq!(collapser.weights, Vec::from([0, 3, 7]));
+        assert!(collapser.collapse(&mut collapsed_state).is_ok());
+
+        let collapsed_state_index = collapsed_state.collapsed().expect("state is collapsed");
+
+        match state {
+            State::Collapsed(index) => assert_eq!(collapsed_state_index, index),
+            State::Superimposed(superposition) => {
+                assert!(superposition.contains_state(*collapsed_state_index))
+            }
+        }
+    }
+
+    fn assert_collapse_no_viable_state<C>(collapser: &mut C)
+    where
+        C: Collapser,
+    {
+        let mut state = State::Superimposed(Superposition::fill(0));
+
+        assert_eq!(
+            collapser.collapse(&mut state),
+            Err(StateError::NoViableState)
+        );
     }
 
     #[test]
     fn unweighted_collapser() {
-        let collapser = UnweightedCollapser;
+        let mut collapser = UnweightedCollapser::new(StepRng::new(0, 0));
 
-        let states = [0, 1, 2];
+        let state = State::Superimposed(Superposition::fill(3));
 
-        let mut rng = StepRng::new(0, u64::MAX / 3);
-
-        assert_eq!(collapser.collapse(states, &mut rng), Ok(0));
-
-        // Assertions pass but StepRng makes this test slow I don't know why.
-        // assert_eq!(collapser.collapse(states, &mut rng), 1);
-        // assert_eq!(collapser.collapse(states, &mut rng), 2);
+        assert_collapse(&mut collapser, &state);
     }
 
     #[test]
-    fn unweighted_collapser_empty_states() {
-        let collapser = UnweightedCollapser;
+    fn unweighted_collapser_no_viable_state() {
+        let mut collapser = UnweightedCollapser::new(StepRng::new(0, 0));
 
-        let states = [];
-
-        let mut rng = StepRng::new(0, 0);
-
-        assert_eq!(
-            collapser.collapse(states, &mut rng),
-            Err(StateError::NoViableState)
-        );
+        assert_collapse_no_viable_state(&mut collapser);
     }
 
     #[test]
     fn weighted_collapser() {
-        let collapser = WeightedCollapser {
-            weights: Vec::from([0, 3, 7]),
-        };
+        let mut collapser = WeightedCollapser::with_tile_set(StepRng::new(0, 0), TILE_SET);
 
-        let states = [0, 1, 2];
+        let state = State::Superimposed(Superposition::fill(3));
 
-        let mut rng = StepRng::new(0, u64::MAX / 4);
-
-        assert_eq!(collapser.collapse(states, &mut rng), Ok(1));
-        assert_eq!(collapser.collapse(states, &mut rng), Ok(2));
-        assert_eq!(collapser.collapse(states, &mut rng), Ok(2));
+        assert_collapse(&mut collapser, &state);
     }
 
     #[test]
-    fn weighted_collapser_empty_states() {
-        let collapser = WeightedCollapser {
-            weights: Vec::new(),
-        };
+    fn weighted_collapser_no_viable_state() {
+        let mut collapser = WeightedCollapser::with_tile_set(StepRng::new(0, 0), TILE_SET);
 
-        let states = [];
-
-        let mut rng = StepRng::new(0, 0);
-
-        assert_eq!(
-            collapser.collapse(states, &mut rng),
-            Err(StateError::NoViableState)
-        );
+        assert_collapse_no_viable_state(&mut collapser);
     }
 
     #[test]
-    fn weighted_collapser_empty_weights() {
-        let collapser = WeightedCollapser {
-            weights: Vec::new(),
-        };
+    fn weighted_collapser_state_out_of_domain_bounds() {
+        let mut collapser =
+            WeightedCollapser::with_tile_set::<TestWeightedTile>(StepRng::new(0, 0), &[]);
 
-        let states = [0, 1, 2];
-
-        let mut rng = StepRng::new(0, 0);
+        let mut state = State::Superimposed(Superposition::fill(3));
 
         assert_eq!(
-            collapser.collapse(states, &mut rng),
+            collapser.collapse(&mut state),
             Err(StateError::StateOutOfDomainBounds)
         );
     }
