@@ -63,6 +63,14 @@ impl State {
         Self::Superimposed(Superposition::from_iter(states))
     }
 
+    /// Returns number of states contained within `self`.
+    pub fn count(&self) -> usize {
+        match self {
+            State::Collapsed(_) => 1,
+            State::Superimposed(superposition) => superposition.count(),
+        }
+    }
+
     /// Returns `true` if `self` is [`Collapsed`]
     pub fn is_collapsed(&self) -> bool {
         match self {
@@ -211,6 +219,11 @@ impl Superposition {
         Self { bitmask }
     }
 
+    /// Returns the number of states contained within `self`.
+    pub fn count(&self) -> usize {
+        self.into_iter().count()
+    }
+
     /// returns a bitmask containing `state`
     ///
     /// # Panics
@@ -329,7 +342,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fill_exceeds_max() {
-        let s = State::fill(Superposition::MAX + 1);
+        State::fill(Superposition::MAX + 1);
     }
 
     #[test]
@@ -353,6 +366,20 @@ mod tests {
         use std::iter::repeat;
 
         State::from_iter(repeat(true).take(Superposition::MAX + 1));
+    }
+
+    #[test]
+    fn count_collapsed() {
+        let s = State::Collapsed(0);
+
+        assert_eq!(s.count(), 1);
+    }
+
+    #[test]
+    fn count_superimposed() {
+        let s = State::from_iter([true, false, false, true]);
+
+        assert_eq!(s.count(), 2);
     }
 
     #[test]
@@ -438,7 +465,7 @@ mod tests {
         #[test]
         #[should_panic]
         fn fill_exceeds_max() {
-            let s = Superposition::fill(Superposition::MAX + 1);
+            Superposition::fill(Superposition::MAX + 1);
         }
 
         #[test]
@@ -457,6 +484,27 @@ mod tests {
             use std::iter::repeat;
 
             Superposition::from_iter(repeat(true).take(Superposition::MAX + 1));
+        }
+
+        #[test]
+        fn count() {
+            let s = Superposition::from_iter([true, false, false, true]);
+
+            assert_eq!(s.count(), 2);
+        }
+
+        #[test]
+        fn count_empty() {
+            let s = Superposition::default();
+
+            assert_eq!(s.count(), 0);
+        }
+
+        #[test]
+        fn count_full() {
+            let s = Superposition::fill(Superposition::MAX);
+
+            assert_eq!(s.count(), Superposition::MAX);
         }
 
         #[test]
