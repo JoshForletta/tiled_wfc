@@ -13,7 +13,7 @@ pub enum StateError {
     Collapsed,
     Superimposed,
     NoViableState,
-    StateOutOfDomainBounds,
+    OutOfTileSetBounds,
 }
 
 impl Display for StateError {
@@ -25,7 +25,7 @@ impl Display for StateError {
                 Self::Collapsed => "state is collapsed",
                 Self::Superimposed => "state is superimposed",
                 Self::NoViableState => "no viable state",
-                Self::StateOutOfDomainBounds => "state out of domain bounds",
+                Self::OutOfTileSetBounds => "state out of tile set bounds",
             }
         )
     }

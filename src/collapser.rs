@@ -74,7 +74,7 @@ where
     /// # Errors
     ///
     /// - if `state` contains no viable state.
-    /// - if `state` contains a state out side of domain bounds.
+    /// - if `state` contains a state out side of tile set bounds.
     fn collapse(&mut self, state: &mut State) -> Result<(), StateError> {
         let states: Vec<usize> = state.into_iter().collect();
         let mut weights = Vec::with_capacity(states.len());
@@ -83,7 +83,7 @@ where
             weights.push(
                 self.weights
                     .get(*index)
-                    .ok_or(StateError::StateOutOfDomainBounds)?,
+                    .ok_or(StateError::OutOfTileSetBounds)?,
             );
         }
 
@@ -185,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn weighted_collapser_state_out_of_domain_bounds() {
+    fn weighted_collapser_state_out_of_tile_set_bounds() {
         let mut collapser =
             WeightedCollapser::with_tile_set::<TestWeightedTile>(StepRng::new(0, 0), &[]);
 
@@ -193,7 +193,7 @@ mod tests {
 
         assert_eq!(
             collapser.collapse(&mut state),
-            Err(StateError::StateOutOfDomainBounds)
+            Err(StateError::OutOfTileSetBounds)
         );
     }
 }
