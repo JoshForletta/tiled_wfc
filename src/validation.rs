@@ -140,32 +140,9 @@ pub fn validate_matrix_state<const D: usize>(
 mod tests {
     use nd_matrix::{AxisPair, Matrix};
 
-    use crate::{state::Superposition, validation::valid_adjacencies_map, State, Tile};
-
-    const TILE_SET: &[TestTile] = &[
-        TestTile::new([AxisPair::new('a', 'b'), AxisPair::new('b', 'a')]),
-        TestTile::new([AxisPair::new('a', 'a'), AxisPair::new('a', 'a')]),
-        TestTile::new([AxisPair::new('b', 'b'), AxisPair::new('b', 'b')]),
-    ];
-
-    #[derive(Debug)]
-    struct TestTile {
-        sockets: [AxisPair<char>; 2],
-    }
-
-    impl TestTile {
-        const fn new(sockets: [AxisPair<char>; 2]) -> Self {
-            Self { sockets }
-        }
-    }
-
-    impl Tile<2> for TestTile {
-        type Socket = char;
-
-        fn sockets(&self) -> [AxisPair<<Self as Tile<2>>::Socket>; 2] {
-            self.sockets
-        }
-    }
+    use crate::{
+        state::Superposition, test_utils::TILE_SET, validation::valid_adjacencies_map, State,
+    };
 
     #[test]
     fn valid_adjacencies_from_tile() {

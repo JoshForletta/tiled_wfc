@@ -7,6 +7,9 @@ pub mod tile;
 pub mod validation;
 pub mod wfc;
 
+#[cfg(test)]
+mod test_utils;
+
 pub use collapser::{Collapser, UnweightedCollapser, WeightedCollapser};
 pub use state::{State, StateError};
 pub use tile::{Tile, Weighted};
