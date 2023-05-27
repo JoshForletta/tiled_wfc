@@ -10,6 +10,8 @@ use crate::Collapser;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StateError {
+    Collapsed,
+    Superimposed,
     NoViableState,
     StateOutOfDomainBounds,
 }
@@ -20,6 +22,8 @@ impl Display for StateError {
             f,
             "{}",
             match self {
+                Self::Collapsed => "state is collapsed",
+                Self::Superimposed => "state is superimposed",
                 Self::NoViableState => "no viable state",
                 Self::StateOutOfDomainBounds => "state out of domain bounds",
             }
@@ -59,11 +63,47 @@ impl State {
         Self::Superimposed(Superposition::from_iter(states))
     }
 
-    /// Returns `true` if state is [`Collapsed`]
+    /// Returns `true` if `self` is [`Collapsed`]
     pub fn is_collapsed(&self) -> bool {
         match self {
             State::Collapsed(_) => true,
             State::Superimposed(_) => false,
+        }
+    }
+
+    /// Returns a reference to state if `self` is [`Collapsed`], otherwise
+    /// returns [`StateError::Superimposed`].
+    pub fn collapsed(&self) -> Result<&usize, StateError> {
+        match self {
+            State::Collapsed(state_index) => Ok(state_index),
+            State::Superimposed(_) => Err(StateError::Superimposed),
+        }
+    }
+
+    /// Returns a reference to superposition if `self` is [`Superimposed`],
+    /// otherwise returns [`StateError::Collapsed`].
+    pub fn superimposed(&self) -> Result<&Superposition, StateError> {
+        match self {
+            State::Collapsed(_) => Err(StateError::Collapsed),
+            State::Superimposed(superpoition) => Ok(superpoition),
+        }
+    }
+
+    /// Returns a mutable reference to state if `self` is [`Collapsed`],
+    /// otherwise returns [`StateError::Superimposed`].
+    pub fn collapsed_mut(&mut self) -> Result<&mut usize, StateError> {
+        match self {
+            State::Collapsed(state_index) => Ok(state_index),
+            State::Superimposed(_) => Err(StateError::Superimposed),
+        }
+    }
+
+    /// Returns a mutable reference to superposition if `self` is
+    /// [`Superimposed`], otherwise returns [`StateError::Collapsed`].
+    pub fn superimposed_mut(&mut self) -> Result<&mut Superposition, StateError> {
+        match self {
+            State::Collapsed(_) => Err(StateError::Collapsed),
+            State::Superimposed(superpoition) => Ok(superpoition),
         }
     }
 
@@ -322,6 +362,48 @@ mod tests {
 
         assert!(s1.is_collapsed());
         assert!(!s2.is_collapsed());
+    }
+
+    #[test]
+    fn collapsed() {
+        let s1 = State::Collapsed(0);
+        let s2 = State::Superimposed(Superposition::from_iter([true, false, false]));
+
+        assert_eq!(s1.collapsed(), Ok(&0));
+        assert_eq!(s2.collapsed(), Err(StateError::Superimposed));
+    }
+
+    #[test]
+    fn collapsed_mut() {
+        let mut s1 = State::Collapsed(0);
+        let mut s2 = State::Superimposed(Superposition::from_iter([true, false, false]));
+
+        assert_eq!(s1.collapsed_mut(), Ok(&mut 0));
+        assert_eq!(s2.collapsed_mut(), Err(StateError::Superimposed));
+    }
+
+    #[test]
+    fn superimposed() {
+        let s1 = State::Superimposed(Superposition::from_iter([true, false, false]));
+        let s2 = State::Collapsed(0);
+
+        assert_eq!(
+            s1.superimposed(),
+            Ok(&Superposition::from_iter([true, false, false]))
+        );
+        assert_eq!(s2.superimposed(), Err(StateError::Collapsed));
+    }
+
+    #[test]
+    fn superimposed_mut() {
+        let mut s1 = State::Superimposed(Superposition::from_iter([true, false, false]));
+        let mut s2 = State::Collapsed(0);
+
+        assert_eq!(
+            s1.superimposed_mut(),
+            Ok(&mut Superposition::from_iter([true, false, false]))
+        );
+        assert_eq!(s2.superimposed_mut(), Err(StateError::Collapsed));
     }
 
     #[test]
