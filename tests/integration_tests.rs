@@ -1,6 +1,6 @@
 use tiled_wfc::{
     validation::{valid_adjacencies_map, validate_matrix_state},
-    AxisPair, Tile, Weighted, WFC,
+    AxisPair, State, Tile, Weighted, WFC,
 };
 
 use Socket::*;
@@ -107,17 +107,23 @@ fn char_tile() {
         .tile_set(TILE_SET)
         .dimensions([80, 40])
         .seed_from_u64(422)
-        .build()
-        .unwrap();
+        .build();
 
     wfc.collapse().expect("solution");
 
-    let lines = wfc.matrix().matrix().chunks(wfc.dimensions()[0]).rev();
+    let lines = wfc
+        .matrix()
+        .matrix()
+        .chunks(wfc.matrix().dimensions()[0])
+        .rev();
 
     for states in lines {
         let line: String = states
             .into_iter()
-            .map(|state| wfc.get_tile(state).map_or(' ', |tile| tile.character))
+            .map(|state| match state {
+                State::Collapsed(state_index) => wfc.tile_set()[*state_index].character,
+                State::Superimposed(_) => ' ',
+            })
             .collect();
 
         println!("{}", line);

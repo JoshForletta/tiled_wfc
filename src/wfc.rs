@@ -1,19 +1,22 @@
-use std::{collections::HashMap, marker::PhantomData};
-
 use nd_matrix::{Matrix, ToIndex};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{
-    AxisPair, Collapser, State, StateError, Tile, UnweightedCollapser, Weighted, WeightedCollapser,
+    state::Superposition, validation::valid_adjacencies_map, AxisPair, Collapser, State,
+    StateError, Tile, UnweightedCollapser,
 };
 
 pub struct WFCBuilder<'a, T, const D: usize, C> {
     tile_set: Option<&'a [T]>,
     dimensions: Option<[usize; D]>,
-    collapser: Option<C>,
+    collapser: C,
 }
 
-impl<'a, T, const D: usize, C> WFCBuilder<'a, T, D, C> {
+impl<'a, T, const D: usize, C> WFCBuilder<'a, T, D, C>
+where
+    T: Tile<D>,
+    C: Collapser,
+{
     pub fn tile_set(mut self, tile_set: &'a [T]) -> Self {
         self.tile_set = Some(tile_set);
         self
@@ -24,7 +27,18 @@ impl<'a, T, const D: usize, C> WFCBuilder<'a, T, D, C> {
         self
     }
 
-    fn check(self) -> Result<(&'a [T], [usize; D], C), String> {
+    pub fn collapser<NC>(self, collapser: NC) -> WFCBuilder<'a, T, D, NC>
+    where
+        NC: Collapser,
+    {
+        WFCBuilder {
+            tile_set: self.tile_set,
+            dimensions: self.dimensions,
+            collapser,
+        }
+    }
+
+    fn check(self) -> (&'a [T], [usize; D], C) {
         let mut missing_field_messages = Vec::new();
 
         if self.tile_set.is_none() {
@@ -35,45 +49,35 @@ impl<'a, T, const D: usize, C> WFCBuilder<'a, T, D, C> {
             missing_field_messages.push("`dimension`");
         }
 
-        if self.collapser.is_none() {
-            missing_field_messages.push("`collapser`");
+        if missing_field_messages.len() != 0 {
+            panic!("missing feilds: {}", missing_field_messages.join(", "));
         }
 
-        if missing_field_messages.len() == 0 {
-            Ok((
-                self.tile_set.unwrap(),
-                self.dimensions.unwrap(),
-                self.collapser.unwrap(),
-            ))
-        } else {
-            Err(format!(
-                "missing feilds: {}",
-                missing_field_messages.join(", ")
-            ))
-        }
+        (
+            self.tile_set.unwrap(),
+            self.dimensions.unwrap(),
+            self.collapser,
+        )
     }
 }
 
 impl<'a, T, const D: usize, R> WFCBuilder<'a, T, D, UnweightedCollapser<R>>
 where
+    T: Tile<D>,
     R: Rng + SeedableRng,
 {
     pub fn seed(mut self, seed: <R as SeedableRng>::Seed) -> Self {
-        self.collapser = Some(UnweightedCollapser::new(<R as SeedableRng>::from_seed(
-            seed,
-        )));
+        self.collapser = UnweightedCollapser::new(<R as SeedableRng>::from_seed(seed));
         self
     }
 
     pub fn seed_from_u64(mut self, state: u64) -> Self {
-        self.collapser = Some(UnweightedCollapser::new(<R as SeedableRng>::seed_from_u64(
-            state,
-        )));
+        self.collapser = UnweightedCollapser::new(<R as SeedableRng>::seed_from_u64(state));
         self
     }
 
     pub fn from_entropy(mut self) -> Self {
-        self.collapser = Some(UnweightedCollapser::new(<R as SeedableRng>::from_entropy()));
+        self.collapser = UnweightedCollapser::new(<R as SeedableRng>::from_entropy());
         self
     }
 }
@@ -81,32 +85,25 @@ where
 impl<'a, T, const D: usize, C> WFCBuilder<'a, T, D, C>
 where
     T: Tile<D>,
+    C: Collapser,
 {
-    pub fn build(self) -> Result<WFC<'a, T, D, C>, String> {
-        todo!()
-        // let (tile_set, dimensions, rng) = self.check()?;
-        //
-        // Ok(WFC {
-        //     tile_set,
-        //     valid_adjacencies_map: valid_adjacencies_map(tile_set),
-        //     valid_adjacencies_cache: HashMap::new(),
-        //     propagation_stack: Vec::new(),
-        //     propagation_records: Vec::new(),
-        //     collapser: UnweightedCollapser,
-        //     rng,
-        //     matrix: Matrix::fill(dimensions, State::fill(true, tile_set.len())),
-        // })
+    pub fn build(self) -> WFC<'a, T, D, C> {
+        let (tile_set, dimensions, collapser) = self.check();
+
+        WFC {
+            tile_set,
+            valid_adjacencies_map: valid_adjacencies_map(tile_set),
+            collapser,
+            matrix: Matrix::fill(dimensions, State::fill(tile_set.len())),
+        }
     }
 }
 
 pub struct WFC<'a, T, const D: usize, C> {
     tile_set: &'a [T],
-    valid_adjacencies_map: Vec<[AxisPair<State>; D]>,
-    valid_adjacencies_cache: HashMap<State, [AxisPair<State>; D]>,
-    propagation_stack: Vec<usize>,
-    propagation_records: Vec<(usize, State)>,
-    collapser: C,
+    valid_adjacencies_map: Vec<[AxisPair<Superposition>; D]>,
     matrix: Matrix<State, D>,
+    collapser: C,
 }
 
 impl<'a, T, const D: usize> WFC<'a, T, D, UnweightedCollapser<StdRng>>
@@ -117,7 +114,7 @@ where
         WFCBuilder {
             tile_set: None,
             dimensions: None,
-            collapser: Some(UnweightedCollapser::new(StdRng::from_entropy())),
+            collapser: UnweightedCollapser::new(StdRng::from_entropy()),
         }
     }
 }
@@ -130,16 +127,6 @@ where
     #[inline(always)]
     pub fn matrix(&self) -> &Matrix<State, D> {
         &self.matrix
-    }
-
-    #[inline(always)]
-    pub fn dimensions(&self) -> &[usize; D] {
-        self.matrix.dimensions()
-    }
-
-    #[inline(always)]
-    pub fn dimension_offsets(&self) -> &[usize; D] {
-        self.matrix.dimension_offsets()
     }
 
     #[inline(always)]
@@ -168,11 +155,6 @@ where
         self.matrix.get_mut(index)
     }
 
-    #[inline(always)]
-    pub fn get_tile(&self, state: &State) -> Option<&T> {
-        todo!()
-    }
-
     pub fn least_entropic_index(&self) -> Option<usize> {
         todo!()
     }
@@ -185,18 +167,15 @@ where
         todo!()
     }
 
-    pub fn uncollapse_state(
-        &mut self,
-        stack: &mut Vec<(usize, State, Vec<(usize, State)>)>,
-    ) -> Result<(), StateError> {
+    pub fn uncollapse_state(&mut self) -> Result<(), StateError> {
         todo!()
     }
 
-    pub fn propagate(&mut self, index: usize) -> Result<Vec<(usize, State)>, StateError> {
+    fn propagate(&mut self, index: usize) -> Result<Vec<(usize, State)>, StateError> {
         todo!()
     }
 
-    pub fn unpropagate(&mut self, propagation_record: Vec<(usize, State)>) {
+    fn unpropagate(&mut self, propagation_record: Vec<(usize, State)>) {
         todo!()
     }
 }
@@ -204,6 +183,8 @@ where
 #[cfg(test)]
 mod tests {
     use rand::rngs::mock::StepRng;
+
+    use crate::test_utils::TILE_SET;
 
     use super::*;
 
@@ -221,49 +202,25 @@ mod tests {
     }
 
     #[test]
+    fn builder() {
+        let wfc = WFC::builder()
+            .tile_set(TILE_SET)
+            .dimensions([2, 2])
+            .collapser(UnweightedCollapser::new(StepRng::new(0, 0)))
+            .build();
+
+        let initial_matrix = Matrix::fill([2, 2], State::fill(3));
+
+        assert_eq!(wfc.matrix(), &initial_matrix);
+    }
+
+    #[test]
     fn least_entropic_index() {
         todo!()
-        // let mut wfc = WFC::<'_, TestTile, 2, _, _> {
-        //     tile_set: &[],
-        //     valid_adjacencies_map: Vec::new(),
-        //     valid_adjacencies_cache: HashMap::new(),
-        //     propagation_stack: Vec::new(),
-        //     propagation_records: Vec::new(),
-        //     collapser: UnweightedCollapser,
-        //     rng: StepRng::new(0, 0),
-        //     matrix: Matrix::fill([2, 2], State::fill(true, 3)),
-        // };
-        //
-        // let collapser = UnweightedCollapser;
-        //
-        // let mut rng = StepRng::new(0, 0);
-        //
-        // wfc.matrix[0]
-        //     .collapse(&collapser, &mut rng)
-        //     .expect("valid state");
-        //
-        // wfc.matrix[1].set(0, false);
-        //
-        // assert_eq!(wfc.least_entropic_index(), Some(1));
     }
 
     #[test]
     fn collapse_state() {
         todo!()
-        // let mut wfc = WFC::<'_, TestTile, 2, StepRng, _> {
-        //     tile_set: &[],
-        //     valid_adjacencies_map: Vec::new(),
-        //     valid_adjacencies_cache: HashMap::new(),
-        //     propagation_stack: Vec::new(),
-        //     propagation_records: Vec::new(),
-        //     collapser: UnweightedCollapser,
-        //     rng: StepRng::new(0, 0),
-        //     matrix: Matrix::fill([2, 2], State::fill(true, 3)),
-        // };
-        //
-        // let remaining_state = wfc.collapse_state(0).expect("viable state");
-        //
-        // assert_eq!(wfc.matrix[0], State::new_collapsed(0));
-        // assert_eq!(remaining_state, State::with_indexes([1, 2], 3));
     }
 }
