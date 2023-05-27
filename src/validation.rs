@@ -6,7 +6,7 @@ use crate::{state::Superposition, AxisPair, State, Tile};
 
 pub type Adjacencies<T, const D: usize> = [AxisPair<T>; D];
 
-/// Returns all valid adjacent states of `tile` given `tile_set`. 
+/// Returns all valid adjacent states of `tile` given `tile_set`.
 ///
 /// # Panics
 ///
@@ -274,6 +274,9 @@ mod tests {
             ],
         );
 
-        assert!(super::validate_matrix_state(&matrix, &valid_adjacencies_map));
+        assert!(super::validate_matrix_state(
+            &matrix,
+            &valid_adjacencies_map
+        ));
     }
 }

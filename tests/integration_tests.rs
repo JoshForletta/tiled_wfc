@@ -1,5 +1,5 @@
 use tiled_wfc::{
-    validation::{valid_adjacencies_map, validate_solution},
+    validation::{valid_adjacencies_map, validate_matrix_state},
     AxisPair, Tile, Weighted, WFC,
 };
 
@@ -123,7 +123,7 @@ fn char_tile() {
         println!("{}", line);
     }
 
-    assert!(validate_solution(
+    assert!(validate_matrix_state(
         wfc.matrix(),
         &valid_adjacencies_map(TILE_SET)
     ));
