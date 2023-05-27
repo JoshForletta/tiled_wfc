@@ -2,8 +2,9 @@ use nd_matrix::{Matrix, ToIndex};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{
-    state::Superposition, validation::valid_adjacencies_map, AxisPair, Collapser, State,
-    StateError, Tile, UnweightedCollapser,
+    state::Superposition,
+    validation::{valid_adjacencies_map, Adjacencies},
+    AxisPair, Collapser, State, StateError, Tile, UnweightedCollapser,
 };
 
 pub struct WFCBuilder<'a, T, const D: usize, C> {
@@ -101,7 +102,7 @@ where
 
 pub struct WFC<'a, T, const D: usize, C> {
     tile_set: &'a [T],
-    valid_adjacencies_map: Vec<[AxisPair<Superposition>; D]>,
+    valid_adjacencies_map: Vec<Adjacencies<Superposition, D>>,
     matrix: Matrix<State, D>,
     collapser: C,
 }
@@ -125,13 +126,18 @@ where
     C: Collapser,
 {
     #[inline(always)]
-    pub fn matrix(&self) -> &Matrix<State, D> {
-        &self.matrix
+    pub fn tile_set(&self) -> &[T] {
+        self.tile_set
     }
 
     #[inline(always)]
-    pub fn tile_set(&self) -> &[T] {
-        self.tile_set
+    pub fn valid_adjacencies_map(&self) -> &Vec<Adjacencies<Superposition, D>> {
+        &self.valid_adjacencies_map
+    }
+
+    #[inline(always)]
+    pub fn matrix(&self) -> &Matrix<State, D> {
+        &self.matrix
     }
 
     #[inline(always)]
@@ -156,7 +162,13 @@ where
     }
 
     pub fn least_entropic_index(&self) -> Option<usize> {
-        todo!()
+        self.matrix()
+            .into_iter()
+            .enumerate()
+            .filter(|(_, state)| !state.is_collapsed())
+            .map(|(index, state)| (index, state.count()))
+            .min_by(|(_, min_count), (_, count)| min_count.cmp(count))
+            .map(|(index, _)| index)
     }
 
     pub fn collapse(&mut self) -> Result<(), StateError> {
@@ -184,7 +196,7 @@ where
 mod tests {
     use rand::rngs::mock::StepRng;
 
-    use crate::test_utils::TILE_SET;
+    use crate::{test_utils::TILE_SET, validation::validate_matrix_state};
 
     use super::*;
 
@@ -216,7 +228,59 @@ mod tests {
 
     #[test]
     fn least_entropic_index() {
-        todo!()
+        let wfc = WFC {
+            tile_set: TILE_SET,
+            valid_adjacencies_map: valid_adjacencies_map(TILE_SET),
+            matrix: Matrix::from_with_dimensions(
+                [2, 2],
+                [
+                    // Not valid matrix state
+                    State::Collapsed(0),
+                    State::from_iter([false, true, false]),
+                    State::from_iter([false, true, true]),
+                    State::fill(3),
+                ],
+            ),
+            collapser: UnweightedCollapser::new(StepRng::new(0, 0)),
+        };
+
+        assert_eq!(wfc.least_entropic_index(), Some(1));
+    }
+
+    #[test]
+    fn least_entropic_index_collapsed() {
+        let wfc = WFC {
+            tile_set: TILE_SET,
+            valid_adjacencies_map: valid_adjacencies_map(TILE_SET),
+            matrix: Matrix::from_with_dimensions(
+                [2, 2],
+                [
+                    State::Collapsed(0),
+                    State::Collapsed(1),
+                    State::Collapsed(2),
+                    State::Collapsed(0),
+                ],
+            ),
+            collapser: UnweightedCollapser::new(StepRng::new(0, 0)),
+        };
+
+        assert_eq!(wfc.least_entropic_index(), None);
+    }
+
+    #[test]
+    fn collapse() {
+        let mut wfc = WFC::builder()
+            .tile_set(TILE_SET)
+            .dimensions([2, 2])
+            .collapser(UnweightedCollapser::new(StepRng::new(0, 0)))
+            .build();
+
+        assert!(wfc.collapse().is_ok());
+
+        assert!(validate_matrix_state(
+            wfc.matrix(),
+            wfc.valid_adjacencies_map()
+        ))
     }
 
     #[test]
