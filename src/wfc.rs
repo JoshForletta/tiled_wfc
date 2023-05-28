@@ -2,21 +2,24 @@ use nd_matrix::{Matrix, ToIndex};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{
+    picker::LeastEntropicPicker,
     state::Superposition,
     validation::{valid_adjacencies_from_state, valid_adjacencies_map, Adjacencies},
-    Collapser, State, StateError, Tile, UnweightedCollapser,
+    Collapser, Picker, State, StateError, Tile, UnweightedCollapser,
 };
 
-pub struct WFCBuilder<'a, T, const D: usize, C> {
+pub struct WFCBuilder<'a, T, const D: usize, C, P> {
     tile_set: Option<&'a [T]>,
     dimensions: Option<[usize; D]>,
     collapser: C,
+    picker: P,
 }
 
-impl<'a, T, const D: usize, C> WFCBuilder<'a, T, D, C>
+impl<'a, T, const D: usize, C, P> WFCBuilder<'a, T, D, C, P>
 where
     T: Tile<D>,
     C: Collapser,
+    P: Picker<D>,
 {
     pub fn tile_set(mut self, tile_set: &'a [T]) -> Self {
         self.tile_set = Some(tile_set);
@@ -28,7 +31,7 @@ where
         self
     }
 
-    pub fn collapser<NC>(self, collapser: NC) -> WFCBuilder<'a, T, D, NC>
+    pub fn collapser<NC>(self, collapser: NC) -> WFCBuilder<'a, T, D, NC, P>
     where
         NC: Collapser,
     {
@@ -36,10 +39,23 @@ where
             tile_set: self.tile_set,
             dimensions: self.dimensions,
             collapser,
+            picker: self.picker,
         }
     }
 
-    fn check(self) -> (&'a [T], [usize; D], C) {
+    pub fn picker<NP>(self, picker: NP) -> WFCBuilder<'a, T, D, C, NP>
+    where
+        NP: Picker<D>,
+    {
+        WFCBuilder {
+            tile_set: self.tile_set,
+            dimensions: self.dimensions,
+            collapser: self.collapser,
+            picker,
+        }
+    }
+
+    fn check(self) -> (&'a [T], [usize; D], C, P) {
         let mut missing_field_messages = Vec::new();
 
         if self.tile_set.is_none() {
@@ -58,14 +74,28 @@ where
             self.tile_set.unwrap(),
             self.dimensions.unwrap(),
             self.collapser,
+            self.picker,
         )
+    }
+
+    pub fn build(self) -> WFC<'a, T, D, C, P> {
+        let (tile_set, dimensions, collapser, picker) = self.check();
+
+        WFC {
+            tile_set,
+            valid_adjacencies_map: valid_adjacencies_map(tile_set),
+            collapser,
+            picker,
+            matrix: Matrix::fill(dimensions, State::fill(tile_set.len())),
+        }
     }
 }
 
-impl<'a, T, const D: usize, R> WFCBuilder<'a, T, D, UnweightedCollapser<R>>
+impl<'a, T, const D: usize, P, R> WFCBuilder<'a, T, D, UnweightedCollapser<R>, P>
 where
     T: Tile<D>,
     R: Rng + SeedableRng,
+    P: Picker<D>,
 {
     pub fn seed(mut self, seed: <R as SeedableRng>::Seed) -> Self {
         self.collapser = UnweightedCollapser::new(<R as SeedableRng>::from_seed(seed));
@@ -83,47 +113,33 @@ where
     }
 }
 
-impl<'a, T, const D: usize, C> WFCBuilder<'a, T, D, C>
-where
-    T: Tile<D>,
-    C: Collapser,
-{
-    pub fn build(self) -> WFC<'a, T, D, C> {
-        let (tile_set, dimensions, collapser) = self.check();
-
-        WFC {
-            tile_set,
-            valid_adjacencies_map: valid_adjacencies_map(tile_set),
-            collapser,
-            matrix: Matrix::fill(dimensions, State::fill(tile_set.len())),
-        }
-    }
-}
-
-pub struct WFC<'a, T, const D: usize, C> {
+pub struct WFC<'a, T, const D: usize, C, P> {
     tile_set: &'a [T],
     valid_adjacencies_map: Vec<Adjacencies<Superposition, D>>,
     collapser: C,
+    picker: P,
     matrix: Matrix<State, D>,
 }
 
-impl<'a, T, const D: usize> WFC<'a, T, D, UnweightedCollapser<StdRng>>
+impl<'a, T, const D: usize> WFC<'a, T, D, UnweightedCollapser<StdRng>, LeastEntropicPicker>
 where
     T: Tile<D>,
 {
-    pub fn builder() -> WFCBuilder<'a, T, D, UnweightedCollapser<StdRng>> {
+    pub fn builder() -> WFCBuilder<'a, T, D, UnweightedCollapser<StdRng>, LeastEntropicPicker> {
         WFCBuilder {
             tile_set: None,
             dimensions: None,
             collapser: UnweightedCollapser::new(StdRng::from_entropy()),
+            picker: LeastEntropicPicker,
         }
     }
 }
 
-impl<'a, T, const D: usize, C> WFC<'a, T, D, C>
+impl<'a, T, const D: usize, C, P> WFC<'a, T, D, C, P>
 where
     T: Tile<D>,
     C: Collapser,
+    P: Picker<D>,
 {
     #[inline(always)]
     pub fn tile_set(&self) -> &[T] {
@@ -136,13 +152,18 @@ where
     }
 
     #[inline(always)]
-    pub fn matrix(&self) -> &Matrix<State, D> {
-        &self.matrix
+    pub fn collapser(&self) -> &C {
+        &self.collapser
     }
 
     #[inline(always)]
-    pub fn collapser(&self) -> &C {
-        &self.collapser
+    pub fn picker(&self) -> &P {
+        &self.picker
+    }
+
+    #[inline(always)]
+    pub fn matrix(&self) -> &Matrix<State, D> {
+        &self.matrix
     }
 
     #[inline(always)]
@@ -161,16 +182,10 @@ where
         self.matrix.get_mut(index)
     }
 
-    /// Returns the index of the least enstopic state in the matrix. Returns
-    /// [`None`] if all states are collapsed.
-    pub fn least_entropic_index(&self) -> Option<usize> {
-        self.matrix()
-            .into_iter()
-            .enumerate()
-            .filter(|(_, state)| !state.is_collapsed())
-            .map(|(index, state)| (index, state.count()))
-            .min_by(|(_, min_count), (_, count)| min_count.cmp(count))
-            .map(|(index, _)| index)
+    /// Picks a superimposed state from `self.matrix`. Returns [`None`] if all
+    /// states in `matrix` are collapsed.
+    pub fn pick(&mut self) -> Option<usize> {
+        self.picker.pick(&self.matrix)
     }
 
     /// Collapses all states in `matrix`.
@@ -181,7 +196,7 @@ where
     pub fn collapse(&mut self) -> Result<(), StateError> {
         let mut collapse_records = Vec::with_capacity(self.matrix.len());
 
-        while let Some(index) = self.least_entropic_index() {
+        while let Some(index) = self.pick() {
             match self.collapse_state(index) {
                 Ok(collapse_record) => collapse_records.push(collapse_record),
                 Err(_) => loop {
@@ -203,6 +218,7 @@ where
     /// # Errors
     ///
     /// - if `collapser` errors.
+    /// - if state at `index` is [`State::Collapsed`].
     /// - if collapse results in a state with no viable state after propagation.
     pub fn collapse_state(&mut self, index: usize) -> Result<CollapseRecord, StateError> {
         let initial_state = self.matrix[index].clone();
@@ -416,47 +432,6 @@ mod tests {
         let initial_matrix = Matrix::fill([2, 2], State::fill(3));
 
         assert_eq!(wfc.matrix(), &initial_matrix);
-    }
-
-    #[test]
-    fn least_entropic_index() {
-        let wfc = WFC {
-            tile_set: TILE_SET,
-            valid_adjacencies_map: valid_adjacencies_map(TILE_SET),
-            matrix: Matrix::from_with_dimensions(
-                [2, 2],
-                [
-                    // Not valid matrix state
-                    State::Collapsed(0),
-                    State::from_iter([false, true, false]),
-                    State::from_iter([false, true, true]),
-                    State::fill(3),
-                ],
-            ),
-            collapser: UnweightedCollapser::new(StepRng::new(0, 0)),
-        };
-
-        assert_eq!(wfc.least_entropic_index(), Some(1));
-    }
-
-    #[test]
-    fn least_entropic_index_collapsed() {
-        let wfc = WFC {
-            tile_set: TILE_SET,
-            valid_adjacencies_map: valid_adjacencies_map(TILE_SET),
-            matrix: Matrix::from_with_dimensions(
-                [2, 2],
-                [
-                    State::Collapsed(0),
-                    State::Collapsed(1),
-                    State::Collapsed(2),
-                    State::Collapsed(0),
-                ],
-            ),
-            collapser: UnweightedCollapser::new(StepRng::new(0, 0)),
-        };
-
-        assert_eq!(wfc.least_entropic_index(), None);
     }
 
     #[test]
