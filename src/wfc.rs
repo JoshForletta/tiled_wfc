@@ -3,8 +3,8 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{
     state::Superposition,
-    validation::{valid_adjacencies_map, Adjacencies},
-    AxisPair, Collapser, State, StateError, Tile, UnweightedCollapser,
+    validation::{valid_adjacencies_from_state, valid_adjacencies_map, Adjacencies},
+    Collapser, State, StateError, Tile, UnweightedCollapser,
 };
 
 pub struct WFCBuilder<'a, T, const D: usize, C> {
@@ -103,8 +103,8 @@ where
 pub struct WFC<'a, T, const D: usize, C> {
     tile_set: &'a [T],
     valid_adjacencies_map: Vec<Adjacencies<Superposition, D>>,
-    matrix: Matrix<State, D>,
     collapser: C,
+    matrix: Matrix<State, D>,
 }
 
 impl<'a, T, const D: usize> WFC<'a, T, D, UnweightedCollapser<StdRng>>
@@ -161,6 +161,8 @@ where
         self.matrix.get_mut(index)
     }
 
+    /// Returns the index of the least enstopic state in the matrix. Returns
+    /// [`None`] if all states are collapsed.
     pub fn least_entropic_index(&self) -> Option<usize> {
         self.matrix()
             .into_iter()
@@ -171,25 +173,228 @@ where
             .map(|(index, _)| index)
     }
 
+    /// Collapses all states in `matrix`.
+    ///
+    /// # Errors
+    ///
+    /// if there is no viable solution.
     pub fn collapse(&mut self) -> Result<(), StateError> {
-        todo!()
+        let mut collapse_records = Vec::with_capacity(self.matrix.len());
+
+        while let Some(index) = self.least_entropic_index() {
+            match self.collapse_state(index) {
+                Ok(collapse_record) => collapse_records.push(collapse_record),
+                Err(_) => loop {
+                    let collapse_record =
+                        collapse_records.pop().ok_or(StateError::NoViableState)?;
+
+                    if self.uncollapse_state(collapse_record).is_ok() {
+                        break;
+                    }
+                },
+            };
+        }
+
+        Ok(())
     }
 
-    pub fn collapse_state(&mut self, index: usize) -> Result<State, StateError> {
-        todo!()
+    /// Collapses state at `index` returning a [`CollapseRecord`].
+    ///
+    /// # Errors
+    ///
+    /// - if `collapser` errors.
+    /// - if collapse results in a state with no viable state after propagation.
+    pub fn collapse_state(&mut self, index: usize) -> Result<CollapseRecord, StateError> {
+        let initial_state = self.matrix[index].clone();
+
+        self.collapser.collapse(&mut self.matrix[index])?;
+
+        let propagation_records = match self.propagate(index) {
+            Ok(propagation_record) => propagation_record,
+            Err(e) => {
+                self.matrix[index] = initial_state;
+                return Err(e);
+            }
+        };
+
+        let mut remaining_state = initial_state;
+        let collapsed_state = *self.matrix[index]
+            .collapsed()
+            .expect("state after collapse to be `State::Collapsed`");
+
+        remaining_state
+            .superimposed_mut()
+            .expect("state at `index` to be superimposed")
+            .remove_state(collapsed_state);
+
+        Ok(CollapseRecord {
+            index,
+            remaining_state,
+            propagation_records,
+        })
     }
 
-    pub fn uncollapse_state(&mut self) -> Result<(), StateError> {
-        todo!()
+    /// Unpropagates and uncollapses states in `collapse_record`.
+    ///
+    /// # Errors
+    ///
+    /// - if `remaining_state` has no viable state.
+    pub fn uncollapse_state(
+        &mut self,
+        CollapseRecord {
+            index,
+            remaining_state,
+            mut propagation_records,
+        }: CollapseRecord,
+    ) -> Result<(), StateError> {
+        self.matrix[index] = remaining_state;
+
+        self.unpropagate(&mut propagation_records);
+
+        if self.matrix[index].count() == 0 {
+            Err(StateError::NoViableState)
+        } else {
+            Ok(())
+        }
     }
 
-    fn propagate(&mut self, index: usize) -> Result<Vec<(usize, State)>, StateError> {
-        todo!()
+    /// Recusively propagates constraints, starting at `index`.
+    ///
+    /// # Errors
+    ///
+    /// - if propagation results in a superposition with no viable state.
+    /// - if any state adjacent to `index` is [`State::Collapsed`] and not
+    /// contained within `valid_states`.
+    fn propagate(&mut self, index: usize) -> Result<Vec<PropagationRecord>, StateError> {
+        let mut propagation_stack = Vec::from([index]);
+        let mut propagation_records = Vec::new();
+
+        while let Some(index) = propagation_stack.pop() {
+            self.propagate_adjacent_states(
+                &mut propagation_stack,
+                &mut propagation_records,
+                index,
+            )?;
+        }
+
+        Ok(propagation_records)
     }
 
-    fn unpropagate(&mut self, propagation_record: Vec<(usize, State)>) {
-        todo!()
+    /// Constrains all states adjacent to `index`. On error this function
+    /// unpropagates, clearing `propagation_stack` and `propagation_records`.
+    ///
+    /// # Errors
+    ///
+    /// - if propagation results in a superposition with no viable state.
+    /// - if any state adjacent to `index` is [`State::Collapsed`] and not
+    /// contained within `valid_states`.
+    ///
+    /// # Panics
+    ///
+    /// if `index` is out of bounds.
+    fn propagate_adjacent_states(
+        &mut self,
+        propagation_stack: &mut Vec<usize>,
+        propagation_records: &mut Vec<PropagationRecord>,
+        index: usize,
+    ) -> Result<(), StateError> {
+        let valid_adjacencies =
+            &valid_adjacencies_from_state(&self.matrix[index], &self.valid_adjacencies_map);
+        let adjacent_indexes = self.matrix.get_adjacent_indexes(index);
+
+        for (adjacent_index_pair, valid_adjacency_pair) in
+            adjacent_indexes.into_iter().zip(valid_adjacencies)
+        {
+            for (adjacent_index, valid_adjacency) in adjacent_index_pair
+                .into_iter()
+                .zip(valid_adjacency_pair)
+                .filter(|(adjacent_index, _)| adjacent_index.is_some())
+                .map(|(adjacent_index, valid_adjacency)| (adjacent_index.unwrap(), valid_adjacency))
+            {
+                self.propagate_state(
+                    propagation_stack,
+                    propagation_records,
+                    adjacent_index,
+                    valid_adjacency,
+                )?;
+            }
+        }
+
+        Ok(())
     }
+
+    /// Constrains state at `index` with `valid_states`, pushing the record
+    /// onto `propagation_records` and the index onto `propagation_stack`. On
+    /// Error this function unpropagates, clearing the `propagation_stack` and
+    /// `propagation_records`.
+    ///
+    /// # Errors
+    ///
+    /// - if propagation results in a superposition with no viable state.
+    /// - if state at `index` is [`State::Collapsed`] and not contained within
+    /// `valid_states`.
+    ///
+    /// # Panics
+    ///
+    /// if `index` is out of bounds.
+    fn propagate_state(
+        &mut self,
+        propagation_stack: &mut Vec<usize>,
+        propagation_records: &mut Vec<PropagationRecord>,
+        index: usize,
+        valid_states: &Superposition,
+    ) -> Result<(), StateError> {
+        let adjacency = &mut self.matrix[index];
+
+        match adjacency {
+            State::Collapsed(state) if !valid_states.contains_state(*state) => {
+                return Err(StateError::NoViableState);
+            }
+            State::Superimposed(state) if !valid_states.contains_superposition(state) => {
+                let initial_state = state.clone();
+
+                state.constrain(valid_states);
+
+                if state.count() == 0 {
+                    *state = initial_state;
+
+                    self.unpropagate(propagation_records);
+                    propagation_stack.clear();
+
+                    return Err(StateError::NoViableState);
+                }
+
+                propagation_records.push(PropagationRecord {
+                    index,
+                    state: State::Superimposed(initial_state),
+                });
+                propagation_stack.push(index);
+            }
+            _ => (),
+        }
+
+        Ok(())
+    }
+
+    /// Unpropagates states in `propagation_records`, leaving it empty.
+    fn unpropagate(&mut self, propagation_records: &mut Vec<PropagationRecord>) {
+        while let Some(propagation_record) = propagation_records.pop() {
+            self.matrix[propagation_record.index] = propagation_record.state;
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CollapseRecord {
+    index: usize,
+    remaining_state: State,
+    propagation_records: Vec<PropagationRecord>,
+}
+
+#[derive(Debug, Clone)]
+struct PropagationRecord {
+    index: usize,
+    state: State,
 }
 
 #[cfg(test)]
@@ -199,19 +404,6 @@ mod tests {
     use crate::{test_utils::TILE_SET, validation::validate_matrix_state};
 
     use super::*;
-
-    #[derive(Debug)]
-    struct TestTile {
-        sockets: [AxisPair<char>; 2],
-    }
-
-    impl Tile<2> for TestTile {
-        type Socket = char;
-
-        fn sockets(&self) -> [AxisPair<<Self as Tile<2>>::Socket>; 2] {
-            self.sockets
-        }
-    }
 
     #[test]
     fn builder() {
@@ -281,10 +473,5 @@ mod tests {
             wfc.matrix(),
             wfc.valid_adjacencies_map()
         ))
-    }
-
-    #[test]
-    fn collapse_state() {
-        todo!()
     }
 }
