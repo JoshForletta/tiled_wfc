@@ -3,20 +3,19 @@ use nd_matrix::AxisPair;
 use crate::Tile;
 
 pub const TILE_SET: &[TestTile] = &[
-    TestTile::new([AxisPair::new('a', 'b'), AxisPair::new('b', 'a')], 1),
-    TestTile::new([AxisPair::new('a', 'a'), AxisPair::new('a', 'a')], 2),
-    TestTile::new([AxisPair::new('b', 'b'), AxisPair::new('b', 'b')], 3),
+    TestTile::new([AxisPair::new('a', 'b'), AxisPair::new('b', 'a')]),
+    TestTile::new([AxisPair::new('a', 'a'), AxisPair::new('a', 'a')]),
+    TestTile::new([AxisPair::new('b', 'b'), AxisPair::new('b', 'b')]),
 ];
 
 #[derive(Debug)]
 pub struct TestTile {
     sockets: [AxisPair<char>; 2],
-    weight: u32,
 }
 
 impl TestTile {
-    const fn new(sockets: [AxisPair<char>; 2], weight: u32) -> Self {
-        Self { sockets, weight }
+    const fn new(sockets: [AxisPair<char>; 2]) -> Self {
+        Self { sockets }
     }
 }
 

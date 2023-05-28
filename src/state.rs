@@ -4,10 +4,6 @@ use std::{
     iter::{once, repeat, Once},
 };
 
-use rand::Rng;
-
-use crate::Collapser;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StateError {
     Collapsed,
