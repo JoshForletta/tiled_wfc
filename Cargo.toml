@@ -6,6 +6,6 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-nd_matrix = { path = "/Users/josh/projects/nd_matrix" }
+nd_matrix = { git = "https://github.com/JoshForletta/nd_matrix.git" }
 rand = "0.8"
 bitvec = "1"
