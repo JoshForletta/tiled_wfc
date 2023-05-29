@@ -9,3 +9,7 @@ license = "MIT OR Apache-2.0"
 nd_matrix = { git = "https://github.com/JoshForletta/nd_matrix.git" }
 rand = "0.8"
 bitvec = "1"
+
+[dev-dependencies]
+clap = { version = "4.3.0", features = ["derive"] }
+unicode_box_drawing_wfc = { git = "https://github.com/JoshForletta/unicode_box_drawing_wfc" }
